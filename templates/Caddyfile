@@ -1,0 +1,18 @@
+# Managed by setup-ubuntu-virtualization — change the config and re-run
+# `sudo ./setup.sh proxy` instead of editing this file.
+{
+	@ACME_EMAIL_LINE@
+	# Only 443 is reachable from outside: no HTTP->HTTPS redirect server.
+	auto_https disable_redirects
+}
+
+# Certificates via TLS-ALPN-01 on 443; the HTTP-01 challenge needs port 80.
+(acme_tls_alpn) {
+	tls {
+		issuer acme {
+			disable_http_challenge
+		}
+	}
+}
+
+@PROXY_SITE_BLOCKS@

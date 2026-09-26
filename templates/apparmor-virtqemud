@@ -1,0 +1,7 @@
+# Managed by setup-ubuntu-virtualization: virtqemud runs QEMU and reads the
+# firmware/CPU descriptions from the stack on the data disk, and runs host
+# tools from /usr/sbin (dmidecode, ...) like it does from /usr/bin.
+  @DATA_DIR@/stack/** r,
+  @DATA_DIR@/stack/*/lib/** mr,
+  @DATA_DIR@/stack/*/bin/* PUx,
+  /usr/sbin/* PUx,

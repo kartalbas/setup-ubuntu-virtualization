@@ -1,0 +1,22 @@
+# Managed by setup-ubuntu-virtualization: NTLM user store for rdpgw.
+[Unit]
+Description=RD Gateway authentication (rdpgw-auth)
+RequiresMountsFor=@DATA_DIR@
+
+[Service]
+DynamicUser=yes
+User=rdpgw
+Group=rdpgw
+RuntimeDirectory=rdpgw
+RuntimeDirectoryMode=0750
+LoadCredential=rdpgw-auth.yaml:@GATEWAY_CONF_DIR@/rdpgw-auth.yaml
+ExecStart=@STACK_CURRENT@/bin/rdpgw-auth -c ${CREDENTIALS_DIRECTORY}/rdpgw-auth.yaml -s /run/rdpgw/auth.sock
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+
+[Install]
+WantedBy=multi-user.target

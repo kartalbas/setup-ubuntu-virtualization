@@ -1,0 +1,11 @@
+<!-- Managed by setup-ubuntu-virtualization: the VMs' private NAT network. -->
+<network>
+  <name>@NAT_NAME@</name>
+  <forward mode='nat'/>
+  <bridge name='@NAT_BRIDGE@' stp='on' delay='0'/>
+  <ip address='@NAT_PREFIX@.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='@NAT_PREFIX@.100' end='@NAT_PREFIX@.199'/>
+    </dhcp>
+  </ip>
+</network>

@@ -1,0 +1,7 @@
+# Managed by setup-ubuntu-virtualization: virt-aa-helper is linked against the
+# stack's libvirt and inspects the stack and the VM disks/seeds on the data
+# disk to build each guest's profile.
+  @DATA_DIR@/** r,
+  @DATA_DIR@/stack/*/lib/** mr,
+  /dev/dri/ r,
+  /dev/dri/by-path/ r,

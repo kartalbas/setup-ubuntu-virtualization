@@ -1,0 +1,4 @@
+# Managed by setup-ubuntu-virtualization (password inside — root only).
+Users:
+  - Username: "@VM_USER@"
+    Password: "@VM_PASSWORD@"

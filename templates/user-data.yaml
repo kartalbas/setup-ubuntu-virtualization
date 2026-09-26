@@ -1,0 +1,63 @@
+#cloud-config
+# Managed by setup-ubuntu-virtualization: first boot of a desktop VM. The VM
+# powers off when done; the host then detaches (and deletes) this seed.
+hostname: @VM_NAME@
+locale: @VM_LOCALE@
+timezone: @VM_TIMEZONE@
+keyboard:
+  layout: "@VM_KEYBOARD@"
+  variant: "@VM_KEYBOARD_VARIANT@"
+users:
+  - name: @VM_USER@
+    gecos: @VM_USER@
+    groups: [adm, sudo]
+    shell: /bin/bash
+    lock_passwd: false
+    hashed_passwd: "@VM_PASSWORD_HASH@"
+    ssh_authorized_keys:
+      - "@VM_SSH_KEY@"
+# SSH with keys only (the host's admin account, see `setup.sh vm update`).
+ssh_pwauth: false
+package_update: true
+package_upgrade: true
+write_files:
+  # GNOME Remote Desktop "Remote Login": RDP on 3389 straight into GDM.
+  - path: /root/remote-login.secret
+    permissions: "0600"
+    content: |
+      @VM_PASSWORD@
+  - path: /usr/local/sbin/setup-remote-login
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      dir=/var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop
+      install -d -o gnome-remote-desktop -g gnome-remote-desktop -m 0700 "$dir"
+      openssl req -new -x509 -newkey rsa:4096 -nodes -days 3650 -subj "/CN=$(hostname)" \
+        -keyout "$dir/rdp-tls.key" -out "$dir/rdp-tls.crt" 2>/dev/null
+      chown gnome-remote-desktop:gnome-remote-desktop "$dir/rdp-tls.key" "$dir/rdp-tls.crt"
+      chmod 0600 "$dir/rdp-tls.key"
+      grdctl --system rdp set-tls-key "$dir/rdp-tls.key"
+      grdctl --system rdp set-tls-cert "$dir/rdp-tls.crt"
+      # The password goes in on stdin, never on a command line. `grdctl
+      # --system` would re-run itself through pkexec, which drops stdin (and
+      # logs its command line), so run it as the daemon's own user instead.
+      runuser -u gnome-remote-desktop -- env -i HOME=/var/lib/gnome-remote-desktop PATH=/usr/bin:/bin \
+        grdctl rdp set-credentials "@VM_USER@" </root/remote-login.secret
+      grdctl --system rdp enable
+      systemctl enable gnome-remote-desktop.service
+      shred -u /root/remote-login.secret
+runcmd:
+  # Installed here, not via `packages:` (an unordered set): the same order
+  # gives every VM the same result. The desktop's terminal is Ptyxis (Ubuntu's
+  # default); without "gnome-terminal-" apt may pick GNOME Terminal as well.
+  - [sh, -c, "DEBIAN_FRONTEND=noninteractive apt-get install -y -q @VM_DESKTOP_PACKAGE@ gnome-remote-desktop qemu-guest-agent openssh-server openssl gnome-terminal-"]
+  - [systemctl, enable, qemu-guest-agent.service]
+  - [systemctl, enable, ssh.socket]
+  - [systemctl, set-default, graphical.target]
+  - [/usr/local/sbin/setup-remote-login]
+power_state:
+  mode: poweroff
+  message: setup-ubuntu-virtualization provisioning finished
+  timeout: 60
+  condition: true

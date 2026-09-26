@@ -1,0 +1,14 @@
+# Managed by setup-ubuntu-virtualization: libvirt's state lives on the data disk.
+[Unit]
+Description=libvirt state on the data disk
+RequiresMountsFor=@DATA_DIR@
+Before=virtqemud.service virtnetworkd.service virtstoraged.service
+
+[Mount]
+What=@DATA_DIR@/libvirt
+Where=/var/lib/libvirt
+Type=none
+Options=bind
+
+[Install]
+WantedBy=local-fs.target

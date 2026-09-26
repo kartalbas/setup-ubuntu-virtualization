@@ -1,0 +1,79 @@
+<!-- Managed by setup-ubuntu-virtualization: an Ubuntu desktop VM. -->
+<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>
+  <name>@VM_NAME@</name>
+  <uuid>@VM_UUID@</uuid>
+  <title>@VM_NAME@ (Ubuntu desktop)</title>
+  <metadata>
+    <libosinfo:libosinfo xmlns:libosinfo='http://libosinfo.org/xmlns/libvirt/domain/1.0'>
+      <libosinfo:os id='http://ubuntu.com/ubuntu/26.04'/>
+    </libosinfo:libosinfo>
+  </metadata>
+  <!-- RAM is the VM's own: allocated at start, locked, never ballooned. -->
+  <memory unit='GiB'>@VM_RAM_GIB@</memory>
+  <currentMemory unit='GiB'>@VM_RAM_GIB@</currentMemory>
+  <memoryBacking>
+    <source type='memfd'/>
+    <access mode='shared'/>
+    <allocation mode='immediate'/>
+    <locked/>
+  </memoryBacking>
+  <!-- vCPUs float over the shared CPUs; QEMU's own threads stay on the host's. -->
+@VM_CPU_XML@
+  <os firmware='efi'>
+    <type arch='x86_64' machine='q35'>hvm</type>
+    <firmware>
+      <feature enabled='no' name='secure-boot'/>
+    </firmware>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/>
+    <apic/>
+  </features>
+  <cpu mode='host-passthrough' check='none' migratable='off'>
+    <topology sockets='1' dies='1' clusters='1' cores='@VM_CORES@' threads='@VM_THREADS@'/>
+    <cache mode='passthrough'/>
+    <feature policy='require' name='topoext'/>
+  </cpu>
+  <clock offset='utc'>
+    <timer name='rtc' tickpolicy='catchup'/>
+    <timer name='pit' tickpolicy='delay'/>
+    <timer name='hpet' present='no'/>
+  </clock>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>destroy</on_crash>
+  <pm>
+    <suspend-to-mem enabled='no'/>
+    <suspend-to-disk enabled='no'/>
+  </pm>
+  <devices>
+    <emulator>/usr/local/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2' cache='none' io='native' discard='unmap' iothread='1'/>
+      <source file='@VM_DISK@'/>
+      <target dev='vda' bus='virtio'/>
+    </disk>
+@VM_SEED_XML@
+    <controller type='usb' model='qemu-xhci'/>
+    <interface type='network'>
+      <source network='@NAT_NAME@'/>
+      <mac address='@VM_MAC@'/>
+      <model type='virtio'/>
+    </interface>
+    <channel type='unix'>
+      <target type='virtio' name='org.qemu.guest_agent.0'/>
+    </channel>
+    <input type='tablet' bus='usb'/>
+    <!-- Console for Cockpit (local only); daily use is RDP. -->
+    <graphics type='vnc' autoport='yes'>
+      <listen type='address' address='127.0.0.1'/>
+    </graphics>
+@VM_GPU_XML@
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+    </rng>
+    <memballoon model='none'/>
+  </devices>
+@VM_QEMU_XML@
+</domain>

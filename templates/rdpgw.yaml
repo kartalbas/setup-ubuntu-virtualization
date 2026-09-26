@@ -1,0 +1,25 @@
+# Managed by setup-ubuntu-virtualization (secrets inside — root only).
+Server:
+  GatewayAddress: @GATEWAY_HOST@
+  Port: @GATEWAY_PORT@
+  # TLS ends at Caddy; rdpgw only listens behind it.
+  Tls: disable
+  Authentication:
+    - ntlm
+  AuthSocket: /run/rdpgw/auth.sock
+  # Clients name the target themselves; only these are allowed.
+  HostSelection: unsigned
+  Hosts:
+@GATEWAY_HOSTS@
+  SessionStore: cookie
+  SessionKey: @SESSION_KEY@
+  SessionEncryptionKey: @SESSION_ENC_KEY@
+Caps:
+  TokenAuth: false
+  RedirectAll: true
+  IdleTimeout: 0
+Security:
+  PAATokenSigningKey: @PAA_SIGN_KEY@
+  PAATokenEncryptionKey: @PAA_ENC_KEY@
+  # Behind the proxy every client appears as 127.0.0.1.
+  VerifyClientIp: false

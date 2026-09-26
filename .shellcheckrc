@@ -1,0 +1,6 @@
+# Template placeholders (@NAME@) are filled from shell variables of the same
+# name by render() through indirect expansion, and setup.sh sources every
+# module, so globals set in one module are used in another: shellcheck cannot
+# follow either.
+disable=SC2034,SC2153
+external-sources=true
