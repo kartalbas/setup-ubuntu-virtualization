@@ -143,6 +143,10 @@ _vm_xml() {
       <target dev='sda' bus='sata'/>
       <readonly/>
     </disk>"
+  # The guest sees the host's invariant TSC (host passthrough); with its
+  # frequency fixed, QEMU can still save the VM (suspend with the host).
+  local hz; hz="$(virsh -c qemu:///system capabilities 2>/dev/null | grep -oE "<counter name='tsc' frequency='[0-9]+'" | grep -oE '[0-9]+' | tail -1)"
+  VM_TSC_XML=""; [[ -z "$hz" ]] || VM_TSC_XML="    <timer name='tsc' frequency='$hz'/>"
   local node mode; node="$(cfg_get VM_RENDER_NODE)"; mode="$(cfg_get VM_GPU_MODE virgl)"
   VM_GPU_XML="    <video>
       <model type='virtio' heads='1' primary='yes'/>
@@ -341,6 +345,7 @@ vm_update() {
     _vm_ssh_access "$name"
     log_info "$name is running — the new settings apply after: sudo ./setup.sh vm restart $name"
   fi
+  guests_config
   log_ok "VM $name redefined"
 }
 

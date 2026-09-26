@@ -141,6 +141,11 @@ GitHub first for a private one); this host's files are in
   `proxy` applies changes with a reload: open connections (RDP through the
   gateway, Cockpit, streamed answers) stay up for up to a day.
 - **Guests** update themselves like any Ubuntu desktop.
+- **Host reboot** (`VM_HOST_SHUTDOWN`): `suspend` saves running VMs to disk
+  and resumes them 1:1 at boot, open programs included; QEMU cannot save 3D
+  graphics, so it needs `VM_RENDER_NODE=""` (the desktop is drawn by the CPU).
+  `shutdown` (default) shuts them down cleanly and boots them again. After a
+  change: `sudo ./setup.sh libvirt`.
 - **GPU mode** (`VM_GPU_MODE`): `virgl` (OpenGL, default) or `venus` (OpenGL +
   Vulkan on the host GPU). Venus runs a render server next to QEMU, so it turns
   QEMU's seccomp sandbox off for all VMs. Change it, then `sudo ./setup.sh

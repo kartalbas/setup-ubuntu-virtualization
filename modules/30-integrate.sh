@@ -105,9 +105,29 @@ _integrate_libvirt_conf() {
   (cd "$cur/payload" && find var -type d) | while read -r d; do
     [[ -d "/$d" ]] || run install -d -m 0755 "/$d"
   done
-  # Guests are shut down cleanly with the host; autostart brings them back.
-  render libvirt-guests.default | atomic_write /etc/default/libvirt-guests 0644
+  guests_config
   _qemu_seccomp
+}
+
+# guests_config — what running VMs do when the host shuts down: saved to disk
+# and back 1:1 at boot (VM_HOST_SHUTDOWN=suspend), or shut down cleanly and
+# booted again by autostart. QEMU cannot save a VM with 3D graphics, so while
+# any VM has them, all are shut down instead of failing to be saved.
+guests_config() {
+  local name
+  VM_ON_SHUTDOWN="$(cfg_get VM_HOST_SHUTDOWN shutdown)"
+  [[ "$VM_ON_SHUTDOWN" == suspend || "$VM_ON_SHUTDOWN" == shutdown ]] \
+    || die "VM_HOST_SHUTDOWN must be suspend or shutdown (is: $VM_ON_SHUTDOWN)"
+  if [[ "$VM_ON_SHUTDOWN" == suspend ]]; then
+    for name in $(cfg_get VMS); do
+      if virsh -c qemu:///system dumpxml --inactive "$name" 2>/dev/null | grep -q "accel3d='yes'"; then
+        log_warn "$name has 3D graphics, which QEMU cannot save: VMs are shut down with the host until it has none (VM_RENDER_NODE empty, vm update, vm restart)"
+        VM_ON_SHUTDOWN=shutdown; break
+      fi
+    done
+  fi
+  render libvirt-guests.default | atomic_write /etc/default/libvirt-guests 0644
+  log_ok "With the host, running VMs are: $([[ "$VM_ON_SHUTDOWN" == suspend ]] && echo "saved and resumed 1:1" || echo "shut down and booted again")"
 }
 
 # Venus runs a render server process next to QEMU, which QEMU's seccomp

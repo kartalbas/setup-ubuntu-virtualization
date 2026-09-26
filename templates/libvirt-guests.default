@@ -1,7 +1,8 @@
-# Managed by setup-ubuntu-virtualization.
-# Guests marked autostart come back on their own; on host shutdown every
-# running guest is shut down cleanly (ACPI) instead of being killed.
+# Managed by setup-ubuntu-virtualization (VM_HOST_SHUTDOWN).
+# On host shutdown running guests are saved to disk (suspend: back 1:1 at
+# boot) or shut down cleanly (shutdown: ACPI); guests marked autostart come
+# back on their own, from their saved state when there is one.
 ON_BOOT=ignore
-ON_SHUTDOWN=shutdown
+ON_SHUTDOWN=@VM_ON_SHUTDOWN@
 SHUTDOWN_TIMEOUT=180
 PARALLEL_SHUTDOWN=4
