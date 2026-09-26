@@ -48,6 +48,8 @@ configs_run() { # [save]
       as_user git -C "$dir" add -A
       if as_user git -C "$dir" diff --cached --quiet; then log_ok "Nothing changed"
       else
+        [[ -n "$(as_user git -C "$dir" config user.email)" ]] \
+          || die "git has no identity for $INVOKING_USER: git config --global user.name NAME; git config --global user.email EMAIL"
         as_user git -C "$dir" commit -q -m "setup-ubuntu-virtualization settings from $host"
         as_user git -C "$dir" push -q && log_ok "Saved to $repo"
       fi ;;
