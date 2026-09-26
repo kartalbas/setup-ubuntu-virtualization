@@ -35,8 +35,10 @@ proxy_hosts() {
 proxy_has_cert() { [[ -n "$(find /var/lib/caddy -path '*certificates*' -name "$1.crt" -print -quit 2>/dev/null)" ]]; }
 
 # _site HOST UPSTREAM — one reverse-proxy site block, responses streamed.
+# A reload closes open streams (WebSockets: RDP through the gateway, Cockpit)
+# right away by default; stream_close_delay keeps them for up to a day.
 _site() {
-  printf '%s {\n\timport acme_tls_alpn\n\treverse_proxy %s {\n\t\tflush_interval -1\n\t}\n}\n\n' "$1" "$2"
+  printf '%s {\n\timport acme_tls_alpn\n\treverse_proxy %s {\n\t\tflush_interval -1\n\t\tstream_close_delay 24h\n\t}\n}\n\n' "$1" "$2"
 }
 
 proxy_setup() {
@@ -59,12 +61,13 @@ proxy_setup() {
   run systemctl enable --now caddy
   if (( changed )); then run systemctl reload caddy; fi
   # Caddy retries failed certificate requests with a growing back-off; once
-  # DNS and the port forward are in place, a restart asks right away.
+  # DNS and the port forward are in place, a (forced) reload asks right away —
+  # and unlike a restart it keeps open connections.
   local h missing=() waited=0
   while read -r h; do proxy_has_cert "$h" || missing+=("$h"); done < <(proxy_hosts)
   if (( ${#missing[@]} )) && [[ "$DRY_RUN" != 1 ]]; then
     log_info "No certificate yet for ${missing[*]} — asking Let's Encrypt now"
-    run systemctl restart caddy
+    run systemctl reload caddy
     while (( waited < 90 )); do
       missing=()
       while read -r h; do proxy_has_cert "$h" || missing+=("$h"); done < <(proxy_hosts)

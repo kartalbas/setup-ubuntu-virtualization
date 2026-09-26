@@ -46,6 +46,8 @@ ${C_BOLD}COMMANDS${C_RST} (install runs the host steps in this order)
                        reboots cleanly; exec runs a command inside (guest agent)
   doctor [--rdp]       Health check of everything; --rdp also logs in to every
                        VM over RDP, directly and through the gateway (FreeRDP)
+  configs [save]       This host's settings from / to your own private config
+                       repository (CONFIGS_REPO)
 USAGE
 }
 
@@ -106,6 +108,7 @@ main() {
         *) die "vm: create NAME | update NAME | restart NAME | delete NAME --yes | list | exec NAME COMMAND" ;;
       esac ;;
     doctor)   doctor "$@" ;;
+    configs)  configs_run "$@" ;;
     *) usage; die "Unknown command: $verb" ;;
   esac
 }

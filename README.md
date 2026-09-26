@@ -111,8 +111,26 @@ still checks that gateway and tunnel reach the VM, but not the login itself.
 | `gateway password` | change the gateway password (see Passwords) |
 | `vm create NAME` / `update NAME` / `restart NAME` / `delete NAME --yes` / `list` / `exec NAME CMD` | desktop VMs; `update` applies config changes at the next boot and refreshes SSH access, `restart` reboots cleanly, `exec` runs a command inside (guest agent) |
 | `doctor [--rdp]` | check of everything, incl. DNS and certificates; `--rdp` performs real RDP logins, directly and through the gateway |
+| `configs [save]` | this host's settings from / to your own private config repository (below) |
 
 Every command accepts `--dry-run`.
+
+## Your own config repository
+
+Keep this host's settings in a private repository of your own and put them
+back on a rebuilt host with one command. `config.conf` and the VM password
+are kept there as they are, so the repository must stay private.
+
+```bash
+sudo ./setup.sh config set CONFIGS_REPO OWNER/NAME
+sudo ./setup.sh config set CONFIGS_HOST NAME   # only when hosts share a host name
+sudo ./setup.sh configs save   # copy this host's files there, commit, push
+sudo ./setup.sh configs        # on a rebuilt host (after init): put them back
+```
+
+The repository is cloned as you to `~/repos/<owner>/<name>` (sign in to
+GitHub first for a private one); this host's files are in
+`setup-ubuntu-virtualization/hosts/<CONFIGS_HOST>/`.
 
 ## Maintenance
 
@@ -120,6 +138,8 @@ Every command accepts `--dry-run`.
   `sudo ./setup.sh stack build && sudo ./setup.sh stack activate`. Running VMs
   keep running; `stack rollback` returns to the previous stack.
 - **Caddy** comes from its official apt repository and updates with the system.
+  `proxy` applies changes with a reload: open connections (RDP through the
+  gateway, Cockpit, streamed answers) stay up for up to a day.
 - **Guests** update themselves like any Ubuntu desktop.
 - **GPU mode** (`VM_GPU_MODE`): `virgl` (OpenGL, default) or `venus` (OpenGL +
   Vulkan on the host GPU). Venus runs a render server next to QEMU, so it turns

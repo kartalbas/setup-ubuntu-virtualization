@@ -48,6 +48,10 @@ eq "_cpuset_minus 16c/32t minus two cores" "$(_cpuset_minus 0-31 0,1,16,17)" "2-
 eq "_cpuset_minus single CPUs" "$(_cpuset_minus 0-5 1,3)" "0,2,4-5"
 ( _cpuset_minus 0-3 0-3 ) >/dev/null 2>&1 && bad "_cpuset_minus refuses an empty set" || ok "_cpuset_minus refuses an empty set"
 
+echo "proxy"
+[[ "$(_site a.example 127.0.0.1:1)" == *"stream_close_delay 24h"* ]] && ok "sites keep open streams on reload" || bad "sites close streams on reload"
+( configs_run ) >/dev/null 2>&1 && bad "configs needs CONFIGS_REPO" || ok "configs needs CONFIGS_REPO"
+
 echo "VM identity"
 eq "vm_ip follows the VMS order" "$(vm_ip beta)" "10.77.0.12"
 [[ "$(vm_mac alpha)" =~ ^52:54:00(:[0-9a-f]{2}){3}$ ]] && ok "vm_mac is a KVM MAC" || bad "vm_mac format: $(vm_mac alpha)"
