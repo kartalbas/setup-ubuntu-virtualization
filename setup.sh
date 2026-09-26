@@ -26,8 +26,9 @@ ${C_BOLD}COMMANDS${C_RST} (install runs the host steps in this order)
   init                 Create the machine config from config.example.conf
   config show | set KEY VALUE
                        Show the config, or change one value
-  install              storage, stack build+activate, libvirt, cockpit, proxy,
-                       gateway, firewall — idempotent, safe to re-run
+  install              host, storage, stack build+activate, libvirt, cockpit,
+                       proxy, gateway, firewall — idempotent, safe to re-run
+  host                 The host's name (HOST_NAME) and its /etc/hosts line
   storage              Prepare \$DATA_DIR and move libvirt's state onto it
   stack build [--force] | activate [ID] | rollback | status
                        Build the virtualization stack from versions.conf into
@@ -77,7 +78,8 @@ main() {
   ver_load
   DATA_DIR="$(cfg_req DATA_DIR)"
   case "$verb" in
-    install)  storage_setup; stack_build; stack_activate; cockpit_setup; proxy_setup; gateway_setup; firewall_setup ;;
+    install)  host_setup; storage_setup; stack_build; stack_activate; cockpit_setup; proxy_setup; gateway_setup; firewall_setup ;;
+    host)     host_setup ;;
     storage)  storage_setup ;;
     stack)
       case "${1:-}" in

@@ -104,6 +104,7 @@ still checks that gateway and tunnel reach the VM, but not the login itself.
 |---|---|
 | `init`, `config show`, `config set KEY VALUE` | machine config (`/etc/setup-ubuntu-virtualization/config.conf`) |
 | `install` | all host steps below, in order; idempotent |
+| `host` | the host's name (`HOST_NAME`) and its `/etc/hosts` line |
 | `storage` | `DATA_DIR` layout, `/var/lib/libvirt` bind mount |
 | `stack build [--force]` / `activate [ID]` / `rollback` / `status` | build the pinned stack into `DATA_DIR/stack/<id>`, swap it in, roll back |
 | `libvirt` | wire the active stack into the system, NAT network, storage pools |

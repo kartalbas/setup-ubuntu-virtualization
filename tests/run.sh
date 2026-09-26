@@ -48,6 +48,11 @@ eq "_cpuset_minus 16c/32t minus two cores" "$(_cpuset_minus 0-31 0,1,16,17)" "2-
 eq "_cpuset_minus single CPUs" "$(_cpuset_minus 0-5 1,3)" "0,2,4-5"
 ( _cpuset_minus 0-3 0-3 ) >/dev/null 2>&1 && bad "_cpuset_minus refuses an empty set" || ok "_cpuset_minus refuses an empty set"
 
+echo "host name"
+host_name_valid master2 && ok "a plain name is valid" || bad "a plain name is refused"
+host_name_valid my-host-1 && ok "inner hyphens are valid" || bad "inner hyphens are refused"
+for n in "-x" "x-" "a.b" "a b" ""; do host_name_valid "$n" && bad "\"$n\" is accepted" || ok "\"$n\" is refused"; done
+
 echo "proxy"
 [[ "$(_site a.example 127.0.0.1:1)" == *"stream_close_delay 24h"* ]] && ok "sites keep open streams on reload" || bad "sites close streams on reload"
 ( configs_run ) >/dev/null 2>&1 && bad "configs needs CONFIGS_REPO" || ok "configs needs CONFIGS_REPO"
