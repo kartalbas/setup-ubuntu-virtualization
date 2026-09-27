@@ -45,6 +45,11 @@ ${C_BOLD}COMMANDS${C_RST} (install runs the host steps in this order)
                        Ubuntu desktop VMs from the cloud image + cloud-init;
                        update applies config changes (next boot), restart
                        reboots cleanly; exec runs a command inside (guest agent)
+  vm snapshot NAME [TAG] | snapshots NAME | revert NAME TAG --yes |
+     snapshot-delete NAME TAG
+                       Disk snapshots, taken while the VM runs (its file
+                       systems frozen for that moment); revert shuts it down,
+                       returns its disk to the snapshot and starts it
   doctor [--rdp]       Health check of everything; --rdp also logs in to every
                        VM over RDP, directly and through the gateway (FreeRDP)
   configs [save]       This host's settings from / to your own private config
@@ -107,7 +112,11 @@ main() {
         update) vm_update "${2:?vm update NAME}" ;;
         restart) vm_restart "${2:?vm restart NAME [--force]}" "${3:-}" ;;
         exec)   vm_exec "${2:?vm exec NAME COMMAND}" "${3:?vm exec NAME COMMAND}" ;;
-        *) die "vm: create NAME | update NAME | restart NAME | delete NAME --yes | list | exec NAME COMMAND" ;;
+        snapshot)  vm_snapshot "${2:?vm snapshot NAME [TAG]}" "${3:-}" ;;
+        snapshots) vm_snapshots "${2:?vm snapshots NAME}" ;;
+        revert)    vm_revert "${2:?vm revert NAME TAG --yes}" "${3:?vm revert NAME TAG --yes}" "${4:-}" ;;
+        snapshot-delete) vm_snapshot_delete "${2:?vm snapshot-delete NAME TAG}" "${3:?vm snapshot-delete NAME TAG}" ;;
+        *) die "vm: create NAME | update NAME | restart NAME | delete NAME --yes | list | exec NAME COMMAND | snapshot NAME [TAG] | snapshots NAME | revert NAME TAG --yes | snapshot-delete NAME TAG" ;;
       esac ;;
     doctor)   doctor "$@" ;;
     configs)  configs_run "$@" ;;

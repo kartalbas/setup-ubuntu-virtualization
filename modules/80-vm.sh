@@ -134,7 +134,7 @@ _vm_xml() {
     VM_CPU_XML="  <vcpu placement='static'>$VM_VCPUS</vcpu>
   <iothreads>1</iothreads>"
   fi
-  VM_DISK="$DATA_DIR/vms/$name.qcow2" VM_MAC="$(vm_mac "$name")" NAT_NAME="$(cfg_req NAT_NAME)"
+  VM_DISK="$(vm_disk "$name")" VM_MAC="$(vm_mac "$name")" NAT_NAME="$(cfg_req NAT_NAME)"
   if (( VM_VCPUS % 2 == 0 )); then VM_CORES=$((VM_VCPUS / 2)) VM_THREADS=2; else VM_CORES=$VM_VCPUS VM_THREADS=1; fi
   VM_SEED_XML=""
   [[ -n "$seed" ]] && VM_SEED_XML="    <disk type='file' device='cdrom'>
@@ -226,6 +226,13 @@ _vm_state() {
   local st; st="$(virsh -q -c qemu:///system domstate "$1" 2>/dev/null)" || st=undefined
   printf '%s' "${st//$'\n'/}"
 }
+# vm_disk NAME — the disk file the VM writes to: NAME.qcow2, or after a
+# snapshot the overlay on top of it (NAME.TAG.qcow2; after a revert libvirt
+# names the new one NAME.<time>).
+vm_disk() {
+  local src; src="$(virsh -q -c qemu:///system domblklist "$1" 2>/dev/null | awk '$1 == "vda" {print $2}')"
+  printf '%s' "${src:-$DATA_DIR/vms/$1.qcow2}"
+}
 _vm_define() { # NAME [SEED]
   local xml; xml="$(mktemp)"
   _vm_xml "$@" >"$xml"
@@ -296,8 +303,9 @@ vm_delete() {
   log_step "Delete VM $name"
   local st; st="$(_vm_state "$name")"
   [[ "$st" == running ]] && _virsh destroy "$name"
-  [[ "$st" == undefined ]] || _virsh undefine "$name" --nvram
-  run rm -f "$DATA_DIR/vms/$name.qcow2" "$DATA_DIR/vms/$name-seed.iso"
+  [[ "$st" == undefined ]] || _virsh undefine "$name" --nvram --snapshots-metadata
+  # NAME.* : the snapshot overlays too (after a revert libvirt names one NAME.<time>)
+  run rm -f "$DATA_DIR/vms/$name.qcow2" "$DATA_DIR/vms/$name".* "$DATA_DIR/vms/$name-seed.iso"
   log_ok "VM $name deleted"
 }
 
@@ -340,7 +348,7 @@ vm_update() {
   [[ "$(_vm_state "$name")" != undefined ]] || die "VM $name does not exist"
   log_step "Update VM $name from the config"
   _vm_define "$name"
-  run chmod 0600 "$DATA_DIR/vms/$name.qcow2"
+  run chmod 0600 "$(vm_disk "$name")"
   if [[ "$(_vm_state "$name")" == running ]]; then
     _vm_ssh_access "$name"
     log_info "$name is running — the new settings apply after: sudo ./setup.sh vm restart $name"
@@ -352,22 +360,90 @@ vm_update() {
 # vm_restart NAME [--force] — clean shutdown (guest agent, else ACPI), then
 # start (e.g. after `vm update`); --force powers a hung VM off hard.
 vm_restart() {
-  local name="$1" force="${2:-}" waited=0
+  local name="$1" force="${2:-}"
   vm_index "$name" >/dev/null
-  if [[ "$(_vm_state "$name")" == running && "$force" == --force ]]; then
-    _virsh destroy "$name"
-  elif [[ "$(_vm_state "$name")" == running ]]; then
-    _virsh shutdown "$name" --mode agent,acpi
-    while [[ "$(_vm_state "$name")" != "shut off" ]]; do
-      if (( waited >= 180 )); then die "$name did not shut down within 3 min (hung? then: vm restart $name --force)"; fi
-      sleep 2; waited=$((waited + 2))
-    done
-  fi
+  if [[ "$(_vm_state "$name")" == running && "$force" == --force ]]; then _virsh destroy "$name"
+  else _vm_shutdown "$name"; fi
   _vm_start "$name"
-  waited=0
+  _vm_wait_rdp "$name"
+  log_ok "VM $name restarted and answers RDP"
+}
+
+# _vm_shutdown NAME — clean shutdown (guest agent, else ACPI), waited for.
+_vm_shutdown() {
+  local name="$1" waited=0
+  [[ "$(_vm_state "$name")" == running ]] || return 0
+  _virsh shutdown "$name" --mode agent,acpi
+  while [[ "$(_vm_state "$name")" != "shut off" ]]; do
+    if (( waited >= 180 )); then die "$name did not shut down within 3 min (hung? then: vm restart $name --force)"; fi
+    sleep 2; waited=$((waited + 2))
+  done
+}
+_vm_wait_rdp() {
+  local name="$1" waited=0
   until timeout 2 bash -c ">/dev/tcp/$(vm_ip "$name")/3389" 2>/dev/null; do
-    if (( waited >= 300 )); then die "$name does not answer RDP after the restart"; fi
+    if (( waited >= 300 )); then die "$name does not answer RDP"; fi
     sleep 3; waited=$((waited + 3))
   done
-  log_ok "VM $name restarted and answers RDP"
+}
+
+# ---- snapshots -----------------------------------------------------------------
+# External disk snapshots: at the snapshot the VM's disk is kept as it is, and
+# the VM writes on into an overlay file on top of it (NAME.TAG.qcow2). Taken
+# while the VM runs; the guest agent freezes its file systems for that moment,
+# so the disk is consistent. RAM and the UEFI variables are not part of it.
+# (libvirt refuses internal snapshots for UEFI VMs with a raw NVRAM.)
+
+# vm_snapshot NAME [TAG] — a snapshot now; TAG: letters, digits, . _ -
+# (default: date and time).
+vm_snapshot() {
+  local name="$1" tag="${2:-}" file quiesce=()
+  vm_index "$name" >/dev/null
+  [[ "$(_vm_state "$name")" != undefined ]] || die "VM $name does not exist"
+  [[ -n "$tag" ]] || tag="$(date +%Y-%m-%d_%H%M)"
+  [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || die "Snapshot name: letters, digits, . _ - only"
+  file="$DATA_DIR/vms/$name.$tag.qcow2"
+  [[ ! -e "$file" ]] || die "$file exists already"
+  if [[ "$(_vm_state "$name")" == running ]] \
+     && virsh -c qemu:///system qemu-agent-command "$name" '{"execute":"guest-ping"}' >/dev/null 2>&1; then
+    quiesce=(--quiesce)
+  fi
+  log_step "Snapshot $tag of $name"
+  _virsh snapshot-create-as "$name" "$tag" --description "sudo ./setup.sh vm snapshot" \
+    --disk-only --atomic "${quiesce[@]}" --diskspec "vda,snapshot=external,file=$file"
+  run chmod 0600 "$file"
+  log_ok "Snapshot $tag of $name${quiesce:+ (its file systems frozen for it)} — back to it: sudo ./setup.sh vm revert $name $tag --yes"
+}
+
+# vm_snapshots NAME — the VM's snapshots.
+vm_snapshots() {
+  vm_index "$1" >/dev/null
+  virsh -c qemu:///system snapshot-list "$1" --topological
+}
+
+# vm_revert NAME TAG --yes — back to a snapshot: the VM shuts down cleanly,
+# its disk returns to that moment (what it wrote since is gone), it starts.
+vm_revert() {
+  local name="$1" tag="$2" confirm="${3:-}"
+  vm_index "$name" >/dev/null
+  virsh -c qemu:///system snapshot-info "$name" "$tag" >/dev/null 2>&1 \
+    || die "$name has no snapshot $tag (sudo ./setup.sh vm snapshots $name)"
+  [[ "$confirm" == --yes ]] || die "What $name wrote since $tag is lost. Repeat with: sudo ./setup.sh vm revert $name $tag --yes"
+  log_step "Revert $name to $tag"
+  _vm_shutdown "$name"
+  _virsh snapshot-revert "$name" "$tag"
+  run chmod 0600 "$(vm_disk "$name")"
+  _vm_start "$name"
+  _vm_wait_rdp "$name"
+  log_ok "$name is back at $tag and answers RDP"
+}
+
+# vm_snapshot_delete NAME TAG — drop a snapshot; the VM keeps its current
+# state (libvirt merges the overlay down).
+vm_snapshot_delete() {
+  local name="$1" tag="$2"
+  vm_index "$name" >/dev/null
+  log_step "Delete snapshot $tag of $name"
+  _virsh snapshot-delete "$name" "$tag"
+  log_ok "Snapshot $tag of $name deleted"
 }

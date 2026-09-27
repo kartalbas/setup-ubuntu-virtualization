@@ -111,10 +111,22 @@ still checks that gateway and tunnel reach the VM, but not the login itself.
 | `cockpit`, `proxy`, `gateway`, `firewall` | the individual services |
 | `gateway password` | change the gateway password (see Passwords) |
 | `vm create NAME` / `update NAME` / `restart NAME` / `delete NAME --yes` / `list` / `exec NAME CMD` | desktop VMs; `update` applies config changes at the next boot and refreshes SSH access, `restart` reboots cleanly, `exec` runs a command inside (guest agent) |
+| `vm snapshot NAME [TAG]` / `snapshots NAME` / `revert NAME TAG --yes` / `snapshot-delete NAME TAG` | disk snapshots (below) |
 | `doctor [--rdp]` | check of everything, incl. DNS and certificates; `--rdp` performs real RDP logins, directly and through the gateway |
 | `configs [save]` | this host's settings from / to your own private config repository (below) |
 
 Every command accepts `--dry-run`.
+
+**Snapshots** keep a VM's disk as it is at that moment: `vm snapshot vm2
+before-update` (TAG defaults to date and time) is taken while the VM runs —
+the guest agent freezes its file systems for it, so the disk is consistent.
+From then on the VM writes into an overlay file next to its disk
+(`NAME.TAG.qcow2`). `vm revert vm2 before-update --yes` shuts the VM down,
+returns its disk to that moment (what it wrote since is gone) and starts it;
+`vm snapshot-delete vm2 before-update` merges the overlay down and keeps the
+current state. RAM and the UEFI variables are not part of a snapshot. They are
+external disk snapshots because libvirt refuses internal ones for UEFI VMs with
+a raw NVRAM; `vm update` and `vm delete` follow the overlays.
 
 ## Your own config repository
 

@@ -82,7 +82,7 @@ doctor() {
     [[ "$(_vm_state "$vm")" == undefined ]] && { log_info "VM $vm: not created (sudo ./setup.sh vm create $vm)"; continue; }
     _check "VM $vm is running" test "$(_vm_state "$vm")" = running
     _check "VM $vm: disk readable by root/QEMU only" \
-      bash -c "[[ \$(stat -c %a '$DATA_DIR/vms/$vm.qcow2') == 600 ]]"
+      bash -c "[[ \$(stat -c %a '$(vm_disk "$vm")') == 600 ]]"
     _check "VM $vm answers RDP on $(vm_ip "$vm"):3389" _tcp_open "$(vm_ip "$vm")" 3389
     _check "VM $vm: ssh $vm works for $INVOKING_USER (key, no prompt)" \
       sudo -u "$INVOKING_USER" -H ssh -o BatchMode=yes -o ConnectTimeout=5 "$vm" true
