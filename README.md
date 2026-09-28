@@ -7,7 +7,8 @@ One script turns an Ubuntu 26.04 server into a KVM host for remote desktops:
   Cockpit + cockpit-machines, rdpgw. Versions and checksums are pinned in
   [`versions.conf`](versions.conf); a new stack is swapped in only once it
   built and passed its checks, and the previous one stays for rollback.
-- **Ubuntu desktop VMs** built unattended from the official cloud image, reached
+- **Ubuntu desktop VMs** built unattended from the official cloud image (with
+  a swap file, as the installer makes one: `VM_SWAP_GB`), reached
   with **native RDP** (GNOME Remote Desktop "Remote Login", no xrdp/VNC),
   desktops rendered by a host GPU (virtio-gpu 3D), RAM reserved per VM, vCPUs
   kept off the host's own CPUs.

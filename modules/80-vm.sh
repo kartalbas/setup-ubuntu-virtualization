@@ -239,8 +239,17 @@ _vm_define() { # NAME [SEED]
   _virsh define "$xml"; rm -f "$xml"
 }
 
+# vm_swap_size — VM_SWAP_GB (16 unless set) as cloud-init takes it: "16G", or
+# 0 for no swap file.
+vm_swap_size() {
+  local gb; gb="$(cfg_get VM_SWAP_GB 16)"
+  [[ "$gb" =~ ^[0-9]+$ ]] || die "VM_SWAP_GB is a number of GB (0 = none), not: $gb"
+  if (( 10#$gb > 0 )); then printf '%sG' "$((10#$gb))"; else printf '0'; fi
+}
+
 vm_create() {
-  local name="$1"; vm_index "$name" >/dev/null
+  local name="$1" swap; vm_index "$name" >/dev/null
+  swap="$(vm_swap_size)"
   [[ "$(_vm_state "$name")" == undefined ]] || die "VM $name exists already (see: sudo ./setup.sh vm list)"
   log_step "Create VM $name ($(cfg_req VM_VCPUS) vCPU, $(cfg_req VM_RAM_GIB) GiB, $(cfg_req VM_DISK_GB) GB, $(vm_ip "$name"))"
   apt_install genisoimage openssl
@@ -259,7 +268,7 @@ vm_create() {
   VM_PASSWORD_HASH="$(openssl passwd -6 -stdin <<<"$pw")" VM_INSTANCE="$(date +%s)"
   VM_LOCALE="$(cfg_req VM_LOCALE)" VM_TIMEZONE="$(cfg_req VM_TIMEZONE)"
   VM_KEYBOARD="$(cfg_req VM_KEYBOARD)" VM_KEYBOARD_VARIANT="$(cfg_get VM_KEYBOARD_VARIANT)"
-  VM_DESKTOP_PACKAGE="$(cfg_req VM_DESKTOP_PACKAGE)" VM_SSH_KEY="$(_admin_pubkey)"
+  VM_DESKTOP_PACKAGE="$(cfg_req VM_DESKTOP_PACKAGE)" VM_SSH_KEY="$(_admin_pubkey)" VM_SWAP_SIZE="$swap"
   render user-data.yaml >"$work/user-data"
   render meta-data.yaml >"$work/meta-data"
   render network-config.yaml >"$work/network-config"

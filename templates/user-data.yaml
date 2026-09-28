@@ -20,6 +20,12 @@ users:
 ssh_pwauth: false
 package_update: true
 package_upgrade: true
+# A swap file, as Ubuntu's installer makes one (the cloud image has none);
+# size 0 = none (VM_SWAP_GB).
+swap:
+  filename: /swap.img
+  size: @VM_SWAP_SIZE@
+  maxsize: @VM_SWAP_SIZE@
 write_files:
   # GNOME Remote Desktop "Remote Login": RDP on 3389 straight into GDM.
   - path: /root/remote-login.secret

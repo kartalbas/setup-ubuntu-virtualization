@@ -64,6 +64,21 @@ eq "vm_mac is deterministic" "$(vm_mac alpha)" "$(vm_mac alpha)"
 [[ "$(vm_mac alpha)" != "$(vm_mac beta)" ]] && ok "vm_mac differs per VM" || bad "vm_mac collides"
 ( vm_ip gamma ) >/dev/null 2>&1 && bad "vm_ip rejects unknown VMs" || ok "vm_ip rejects unknown VMs"
 
+echo "VM swap"
+CFG[VM_SWAP_GB]=16; eq "VM_SWAP_GB 16: cloud-init size 16G" "$(vm_swap_size)" "16G"
+CFG[VM_SWAP_GB]=0; eq "VM_SWAP_GB 0: no swap file" "$(vm_swap_size)" "0"
+unset 'CFG[VM_SWAP_GB]'; eq "VM_SWAP_GB not set: 16G" "$(vm_swap_size)" "16G"
+CFG[VM_SWAP_GB]=16G; ( vm_swap_size ) >/dev/null 2>&1 && bad "VM_SWAP_GB=16G accepted" || ok "VM_SWAP_GB with a unit is refused"
+unset 'CFG[VM_SWAP_GB]'
+if python3 -c 'import yaml' 2>/dev/null; then
+  VM_NAME=v VM_LOCALE=l VM_TIMEZONE=t VM_KEYBOARD=k VM_KEYBOARD_VARIANT="" VM_USER=u VM_PASSWORD_HASH=h \
+    VM_SSH_KEY=s VM_PASSWORD=p VM_DESKTOP_PACKAGE=d VM_SWAP_SIZE=16G
+  eq "user-data is YAML with the swap file" \
+    "$(render user-data.yaml | python3 -c 'import sys, yaml; s = yaml.safe_load(sys.stdin)["swap"]; print(s["filename"], s["size"], s["maxsize"])')" "/swap.img 16G 16G"
+else
+  echo "  - skipped: no python3-yaml here"
+fi
+
 echo "templates"
 NAT_NAME=n NAT_BRIDGE=b NAT_PREFIX=10.0.0
 eq "render fills placeholders" "$(render network.xml | grep -c "<name>n</name>")" "1"
