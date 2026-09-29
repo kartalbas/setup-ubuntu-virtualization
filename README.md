@@ -71,6 +71,44 @@ VMs' host keys are fetched through the guest agent into
 over SSH are off. `vm create` sets this up; `vm update NAME` repeats it (e.g.
 for VMs made before).
 
+## Two hosts, one entry point
+
+A second machine can run VMs too while the first stays the only public entry
+point, e.g. when port 443 of the second one belongs to something else, such as
+a Kubernetes ingress. Nothing of the second machine is published directly:
+
+```
+Internet :443 ─► Caddy on the entry point ─┬─ its COCKPIT_HOST ─► its Cockpit
+                                           ├─ PROXY_SITES ─► second host :9090  (its Cockpit, LAN)
+                                           └─ GATEWAY_HOST ─► rdpgw ─┬─ its VMs (NAT)
+                                                                     └─ REMOTE_VMS ─► the second host's VMs (LAN)
+```
+
+On the **second host**:
+
+| Key | Value |
+|---|---|
+| `ENTRY_HOST` | the entry point's LAN address: no Caddy and no gateway here; Cockpit listens on :9090 for that address and this host alone (systemd `IPAddressAllow`, no firewall rule) |
+| `COCKPIT_HOST`, `GATEWAY_HOST` | the names the entry point serves for it |
+| `VM_LAN`, `VM_LAN_ADDRESSES` | the VMs straight on the LAN (macvtap), each with a fixed address; prefix, gateway and DNS are the host's own on that interface; no NAT network |
+| `FIREWALL` | `0` leaves the host's packet filter alone, e.g. on a Kubernetes node whose network plugin owns it |
+| `HOST_CPUS` | empty: the VMs' vCPUs and the host share all CPUs |
+
+On the **entry point**, `PROXY_SITES` gets `SECOND-COCKPIT-HOST=SECOND-HOST:9090` and
+`REMOTE_VMS` the second host's VMs as `NAME=ADDRESS`; `sudo ./setup.sh proxy` and
+`sudo ./setup.sh gateway` apply them. RDP to such a VM goes through the same
+gateway, with the VM name as computer. The gateway checks its password and the
+VM its own, so give both hosts the same VM password (the config repository keeps
+it per host in `secrets/vm-user.password`).
+
+Macvtap leaves the second host's network as it is, but that host itself cannot
+reach its LAN VMs over the network: `vm create`, `vm restart` and `doctor` check
+them through the guest agent, `vm exec` works as always, and SSH comes from other
+machines (`ssh VM_USER@ADDRESS`; the second host's admin key is in the VM). The
+entry point's `doctor --rdp` logs in to them over RDP, directly and through the
+gateway. The LAN hop from the entry point to the second host's Cockpit is plain
+HTTP, like every other `PROXY_SITES` upstream.
+
 ## Passwords
 
 `vm create` gives every VM one generated password for the VM login, RDP and
@@ -108,7 +146,7 @@ still checks that gateway and tunnel reach the VM, but not the login itself.
 | `host` | the host's name (`HOST_NAME`) and its `/etc/hosts` line |
 | `storage` | `DATA_DIR` layout, `/var/lib/libvirt` bind mount |
 | `stack build [--force]` / `activate [ID]` / `rollback` / `status` | build the pinned stack into `DATA_DIR/stack/<id>`, swap it in, roll back |
-| `libvirt` | wire the active stack into the system, NAT network, storage pools |
+| `libvirt` | wire the active stack into the system, NAT network (none with `VM_LAN`), storage pools |
 | `cockpit`, `proxy`, `gateway`, `firewall` | the individual services |
 | `gateway password` | change the gateway password (see Passwords) |
 | `vm create NAME` / `update NAME` / `restart NAME` / `delete NAME --yes` / `list` / `exec NAME CMD` | desktop VMs; `update` applies config changes at the next boot and refreshes SSH access, `restart` reboots cleanly, `exec` runs a command inside (guest agent) |

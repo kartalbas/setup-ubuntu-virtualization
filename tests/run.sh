@@ -79,6 +79,42 @@ else
   echo "  - skipped: no python3-yaml here"
 fi
 
+echo "two hosts: VMs on the LAN, entry point elsewhere"
+CFG[VM_LAN]=eth9 CFG[VM_LAN_ADDRESSES]="192.168.1.201 192.168.1.202"
+eq "VM_LAN: vm_ip is the VM's LAN address" "$(vm_ip beta)" "192.168.1.202"
+CFG[VM_LAN_ADDRESSES]="192.168.1.201"; ( vm_ip beta ) >/dev/null 2>&1 && bad "a VM without LAN address accepted" || ok "a VM without LAN address is refused"
+[[ "$(_vm_nic_xml 52:54:00:aa:bb:cc)" == *"<interface type='direct'>"*"<source dev='eth9' mode='bridge'/>"*"52:54:00:aa:bb:cc"* ]] \
+  && ok "VM_LAN: the NIC is macvtap on the LAN interface" || bad "LAN NIC: $(_vm_nic_xml 52:54:00:aa:bb:cc)"
+# shellcheck disable=SC2329  # stub: the host's interface
+vm_lan_net() { printf '24 192.168.1.1 192.168.1.53'; }
+if python3 -c 'import yaml' 2>/dev/null; then
+  VM_MAC=52:54:00:aa:bb:cc VM_NET_V4="$(_vm_net_v4 alpha)"
+  eq "VM_LAN: cloud-init gives the VM its fixed address, gateway and DNS" \
+    "$(render network-config.yaml | python3 -c 'import sys, yaml; e = yaml.safe_load(sys.stdin)["ethernets"]["lan"]; print(e["addresses"], e["routes"][0]["via"], e["nameservers"]["addresses"], "dhcp4" in e)')" \
+    "['192.168.1.201/24'] 192.168.1.1 ['192.168.1.53'] False"
+fi
+CFG[VM_LAN]="" CFG[VM_LAN_ADDRESSES]=""
+[[ "$(_vm_nic_xml 52:54:00:aa:bb:cc)" == *"<source network='$(cfg_get NAT_NAME)'/>"* ]] && ok "no VM_LAN: the NIC is on the NAT network" || bad "NAT NIC"
+eq "no VM_LAN: DHCP (the reservation)" "$(_vm_net_v4 alpha)" "    dhcp4: true"
+CFG[REMOTE_VMS]="desk3=192.168.1.201"
+eq "the gateway lets this host's and other hosts' VMs through" "$(gateway_vms | tr '\n' ',')" "alpha 10.77.0.11,beta 10.77.0.12,desk3 192.168.1.201,"
+CFG[REMOTE_VMS]="desk3"; ( gateway_vms ) >/dev/null 2>&1 && bad "REMOTE_VMS without address accepted" || ok "REMOTE_VMS entries need NAME=ADDRESS"
+CFG[REMOTE_VMS]=""
+eq "entry point: Cockpit on localhost only" "$(_cockpit_listen | grep -c '^ListenStream=127.0.0.1:9090$')" "1"
+CFG[ENTRY_HOST]=192.168.1.250
+[[ "$(_cockpit_listen)" == *"ListenStream=0.0.0.0:9090"*"IPAddressDeny=any"*"IPAddressAllow=localhost 192.168.1.250"* ]] \
+  && ok "ENTRY_HOST: Cockpit on the LAN, for the entry point and this host only" || bad "cockpit listen: $(_cockpit_listen)"
+# shellcheck disable=SC2329  # stubs: nothing may be installed or started
+_caddy_install() { echo caddy >>"$tmp/called"; }
+# shellcheck disable=SC2329
+apt_install() { echo apt >>"$tmp/called"; }
+: >"$tmp/called"; proxy_setup 2>/dev/null; gateway_setup 2>/dev/null
+eq "ENTRY_HOST: no Caddy and no gateway here" "$(wc -l <"$tmp/called")" "0"
+CFG[ENTRY_HOST]=""
+CFG[FIREWALL]=0; : >"$tmp/called"; firewall_setup 2>/dev/null
+eq "FIREWALL=0: the firewall is left alone" "$(wc -l <"$tmp/called")" "0"
+unset 'CFG[FIREWALL]'
+
 echo "templates"
 NAT_NAME=n NAT_BRIDGE=b NAT_PREFIX=10.0.0
 eq "render fills placeholders" "$(render network.xml | grep -c "<name>n</name>")" "1"

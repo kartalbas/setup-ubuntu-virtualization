@@ -42,6 +42,9 @@ _site() {
 }
 
 proxy_setup() {
+  if [[ -n "$(cfg_get ENTRY_HOST)" ]]; then
+    log_info "Caddy: not on this host — $(cfg_get ENTRY_HOST) is the entry point (ENTRY_HOST)"; return 0
+  fi
   log_step "Caddy on :443"
   _caddy_install
   local email sites="" pair

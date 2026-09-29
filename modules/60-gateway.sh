@@ -2,7 +2,8 @@
 # modules/60-gateway.sh — rdpgw, an RD Gateway: RDP clients (mstsc, Windows
 # App, Remmina/FreeRDP) tunnel native RDP through HTTPS on 443 to the VMs.
 # Users authenticate at the gateway with NTLM (VM_USER + its password); the
-# gateway then lets them reach exactly the VMs in VMS, by name, on 3389.
+# gateway then lets them reach exactly the VMs in VMS and REMOTE_VMS (those of
+# other hosts), by name, on 3389.
 
 GATEWAY_CONF_DIR="/etc/setup-ubuntu-virtualization/rdpgw"
 HOSTS_BEGIN="# BEGIN setup-ubuntu-virtualization VMs"
@@ -19,11 +20,22 @@ _gateway_key() {
   cat "$f"
 }
 
+# gateway_vms — "NAME ADDRESS" of every VM the gateway lets through: this
+# host's (VMS) and other hosts' (REMOTE_VMS).
+gateway_vms() {
+  local vm pair
+  for vm in $(cfg_req VMS); do printf '%s %s\n' "$vm" "$(vm_ip "$vm")"; done
+  for pair in $(cfg_get REMOTE_VMS); do
+    [[ "$pair" == ?*=?* ]] || die "REMOTE_VMS entry '$pair' is not NAME=ADDRESS"
+    printf '%s %s\n' "${pair%%=*}" "${pair#*=}"
+  done
+}
+
 # The VM names resolve on the host through a marked block in /etc/hosts.
 _gateway_hosts_file() {
-  local vm block
+  local vm ip block
   block="$HOSTS_BEGIN"$'\n'
-  for vm in $(cfg_req VMS); do block+="$(vm_ip "$vm")	$vm"$'\n'; done
+  while read -r vm ip; do block+="$ip	$vm"$'\n'; done < <(gateway_vms)
   block+="$HOSTS_END"
   awk -v b="$HOSTS_BEGIN" -v e="$HOSTS_END" '$0 == b {skip=1} !skip {print} $0 == e {skip=0}' /etc/hosts \
     | { cat; printf '%s\n' "$block"; } | atomic_write /etc/hosts 0644
@@ -47,13 +59,16 @@ gateway_password() {
 }
 
 gateway_setup() {
+  if [[ -n "$(cfg_get ENTRY_HOST)" ]]; then
+    log_info "RD Gateway: not on this host — $(cfg_get ENTRY_HOST) is the entry point (its REMOTE_VMS lists this host's VMs)"; return 0
+  fi
   log_step "RD Gateway → $(cfg_req GATEWAY_HOST) (rdpgw on 127.0.0.1:$GATEWAY_PORT)"
   [[ -x "$(stack_current)/bin/rdpgw" ]] || die "No rdpgw in the active stack — run: sudo ./setup.sh stack build && sudo ./setup.sh stack activate"
   _gateway_hosts_file
-  local vm hosts="" pw; pw="$(vm_password)"
-  for vm in $(cfg_req VMS); do
-    hosts+="    - \"$vm:3389\""$'\n'"    - \"$(vm_ip "$vm"):3389\""$'\n'
-  done
+  local vm ip hosts="" pw; pw="$(vm_password)"
+  while read -r vm ip; do
+    hosts+="    - \"$vm:3389\""$'\n'"    - \"$ip:3389\""$'\n'
+  done < <(gateway_vms)
   GATEWAY_HOST="$(cfg_req GATEWAY_HOST)" GATEWAY_HOSTS="${hosts%$'\n'}"
   SESSION_KEY="$(_gateway_key session)" SESSION_ENC_KEY="$(_gateway_key session-enc)"
   PAA_SIGN_KEY="$(_gateway_key paa-sign)" PAA_ENC_KEY="$(_gateway_key paa-enc)"

@@ -63,7 +63,11 @@ doctor() {
   _check "stack matches versions.conf pin ($(stack_id))" test "$(basename "${cur:-none}")" = "$(stack_id)"
   _check "virtqemud answers (libvirt $(virsh -c qemu:///system version 2>/dev/null | awk '/Using library/{print $NF}'), QEMU $(virsh -c qemu:///system version 2>/dev/null | awk '/Running hypervisor/{print $NF}'))" virsh -c qemu:///system version
   _check "AppArmor profile for virtqemud is loaded" grep -q '^virtqemud ' /sys/kernel/security/apparmor/profiles
-  _check "NAT network $(cfg_req NAT_NAME) is active" bash -c "virsh -c qemu:///system net-info '$(cfg_req NAT_NAME)' | grep -q '^Active:.*yes'"
+  if [[ -n "$(cfg_get VM_LAN)" ]]; then
+    _check "VMs on the LAN: interface $(cfg_get VM_LAN) is up" bash -c "ip -o link show '$(cfg_get VM_LAN)' | grep -q 'state UP'"
+  else
+    _check "NAT network $(cfg_req NAT_NAME) is active" bash -c "virsh -c qemu:///system net-info '$(cfg_req NAT_NAME)' | grep -q '^Active:.*yes'"
+  fi
   _check "storage pools vms + images are running" bash -c "virsh -c qemu:///system pool-list --name | grep -qx vms && virsh -c qemu:///system pool-list --name | grep -qx images"
   _check "libvirt-guests is active (shuts guests down with the host)" systemctl is-active -q libvirt-guests.service
   _check "python3 finds the stack's libvirt + cockpit modules" python3 -c 'import libvirt, cockpit'
@@ -71,11 +75,18 @@ doctor() {
     busctl --system call org.libvirt /org/libvirt/QEMU org.libvirt.Connect ListDomains u 0
   _check "Cockpit finds its machines page" bash -c "cockpit-bridge --packages | grep -q '^machines '"
   _check "Cockpit answers on 127.0.0.1:9090" _http_ok -H "Host: $(cfg_req COCKPIT_HOST)" http://127.0.0.1:9090/
-  _check "Caddy is running" _active caddy
-  _check "Caddy listens on 443 and not on 80" bash -c "ss -tlnpH '( sport = :443 )' | grep -q caddy && ! ss -tlnpH '( sport = :80 )' | grep -q caddy"
-  _check "rdpgw + rdpgw-auth are running" bash -c "systemctl is-active -q rdpgw && systemctl is-active -q rdpgw-auth"
-  _check "rdpgw is not reachable from the LAN" bash -c "! timeout 3 bash -c '>/dev/tcp/$(hostname -I | awk '{print $1}')/$GATEWAY_PORT'"
-  _check "ufw is active" bash -c "[[ \$(ufw status) == 'Status: active'* ]]"
+  local entry lan; entry="$(cfg_get ENTRY_HOST)"
+  if [[ -n "$entry" ]]; then
+    # This host's own LAN address is not the entry point: it must be refused.
+    lan="$(ip -4 route get "$entry" 2>/dev/null | grep -oE 'src [0-9.]+' | cut -d' ' -f2)"
+    _check "Cockpit on the LAN lets only $entry in (refuses $lan)" bash -c "! curl -s -m 3 -o /dev/null http://$lan:9090/"
+  else
+    _check "Caddy is running" _active caddy
+    _check "Caddy listens on 443 and not on 80" bash -c "ss -tlnpH '( sport = :443 )' | grep -q caddy && ! ss -tlnpH '( sport = :80 )' | grep -q caddy"
+    _check "rdpgw + rdpgw-auth are running" bash -c "systemctl is-active -q rdpgw && systemctl is-active -q rdpgw-auth"
+    _check "rdpgw is not reachable from the LAN" bash -c "! timeout 3 bash -c '>/dev/tcp/$(hostname -I | awk '{print $1}')/$GATEWAY_PORT'"
+  fi
+  [[ "$(cfg_get FIREWALL 1)" == 0 ]] || _check "ufw is active" bash -c "[[ \$(ufw status) == 'Status: active'* ]]"
   _check "no guest QEMU uses the NVIDIA GPU" _qemu_off_nvidia
   [[ -z "$(cfg_get VM_RENDER_NODE)" ]] || _check "render node $(cfg_get VM_RENDER_NODE) exists" test -e "$(cfg_get VM_RENDER_NODE)"
   for vm in $(cfg_req VMS); do
@@ -83,18 +94,30 @@ doctor() {
     _check "VM $vm is running" test "$(_vm_state "$vm")" = running
     _check "VM $vm: disk readable by root/QEMU only" \
       bash -c "[[ \$(stat -c %a '$(vm_disk "$vm")') == 600 ]]"
-    _check "VM $vm answers RDP on $(vm_ip "$vm"):3389" _tcp_open "$(vm_ip "$vm")" 3389
+    _check "VM $vm answers RDP on $(vm_ip "$vm"):3389" _vm_rdp_up "$vm"
+    # A VM on the LAN (macvtap) cannot be reached from this host: the entry
+    # point checks it (REMOTE_VMS there).
+    [[ -n "$(cfg_get VM_LAN)" ]] && continue
     _check "VM $vm: ssh $vm works for $INVOKING_USER (key, no prompt)" \
       sudo -u "$INVOKING_USER" -H ssh -o BatchMode=yes -o ConnectTimeout=5 "$vm" true
     if (( rdp )); then
       _check_rdp "$vm"
-      _check_rdp "$vm" "$(cfg_req GATEWAY_HOST)"
+      [[ -n "$entry" ]] || _check_rdp "$vm" "$(cfg_req GATEWAY_HOST)"
     fi
   done
-  for h in $(proxy_hosts); do
-    _check "DNS: $h points at this host's public address" _resolves_here "$h"
-    _check "TLS: Caddy holds a certificate for $h" proxy_has_cert "$h"
-  done
+  if [[ -z "$entry" ]]; then   # the entry point: other hosts' VMs, names, certificates
+    for pair in $(cfg_get REMOTE_VMS); do
+      _check "remote VM ${pair%%=*} answers RDP on ${pair#*=}:3389" _tcp_open "${pair#*=}" 3389
+      if (( rdp )); then
+        _check_rdp "${pair%%=*}"
+        _check_rdp "${pair%%=*}" "$(cfg_req GATEWAY_HOST)"
+      fi
+    done
+    for h in $(proxy_hosts); do
+      _check "DNS: $h points at this host's public address" _resolves_here "$h"
+      _check "TLS: Caddy holds a certificate for $h" proxy_has_cert "$h"
+    done
+  fi
   echo >&2
   if (( _d_bad )); then log_warn "$_d_ok passed, $_d_bad failed"; exit 1; fi
   log_ok "All $_d_ok checks passed"

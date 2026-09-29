@@ -45,6 +45,10 @@ _admin_pubkey() {
 _vm_ssh_access() {
   local name="$1" user pub hostkey
   user="$(cfg_req VM_USER)"; pub="$(_admin_pubkey)"
+  if [[ -n "$(cfg_get VM_LAN)" ]]; then   # macvtap: this host cannot reach it
+    log_info "$name is on the LAN: from other machines ssh $user@$(vm_ip "$name") (this host's admin key is in it; the host itself cannot reach it, macvtap)"
+    return 0
+  fi
   vm_exec "$name" "set -e
     h=\$(getent passwd $user | cut -d: -f6); f=\$h/.ssh/authorized_keys
     install -d -m 0700 -o $user -g $user \$h/.ssh; touch \$f
@@ -134,7 +138,7 @@ _vm_xml() {
     VM_CPU_XML="  <vcpu placement='static'>$VM_VCPUS</vcpu>
   <iothreads>1</iothreads>"
   fi
-  VM_DISK="$(vm_disk "$name")" VM_MAC="$(vm_mac "$name")" NAT_NAME="$(cfg_req NAT_NAME)"
+  VM_DISK="$(vm_disk "$name")" VM_MAC="$(vm_mac "$name")" VM_NIC_XML="$(_vm_nic_xml "$VM_MAC")"
   if (( VM_VCPUS % 2 == 0 )); then VM_CORES=$((VM_VCPUS / 2)) VM_THREADS=2; else VM_CORES=$VM_VCPUS VM_THREADS=1; fi
   VM_SEED_XML=""
   [[ -n "$seed" ]] && VM_SEED_XML="    <disk type='file' device='cdrom'>
@@ -191,6 +195,38 @@ $env
     esac
   fi
   render domain.xml
+}
+
+# _vm_nic_xml MAC — the VM's network card: on the NAT network, or (VM_LAN)
+# straight on the host's LAN interface (macvtap, bridge mode).
+_vm_nic_xml() {
+  if [[ -n "$(cfg_get VM_LAN)" ]]; then
+    printf "    <interface type='direct'>\n      <source dev='%s' mode='bridge'/>\n      <mac address='%s'/>\n      <model type='virtio'/>\n    </interface>" "$(cfg_get VM_LAN)" "$1"
+  else
+    printf "    <interface type='network'>\n      <source network='%s'/>\n      <mac address='%s'/>\n      <model type='virtio'/>\n    </interface>" "$(cfg_req NAT_NAME)" "$1"
+  fi
+}
+# _vm_net_v4 NAME — the IPv4 part of the VM's cloud-init network config: DHCP
+# on the NAT network (a reservation), or its fixed address on the LAN.
+_vm_net_v4() {
+  if [[ -n "$(cfg_get VM_LAN)" ]]; then
+    local net pfx gw dns; net="$(vm_lan_net)"; read -r pfx gw dns <<<"$net"
+    printf '    addresses: [%s/%s]\n    routes:\n      - to: default\n        via: %s\n    nameservers:\n      addresses: [%s]' \
+      "$(vm_ip "$1")" "$pfx" "$gw" "$dns"
+  else
+    printf '    dhcp4: true'
+  fi
+}
+# _vm_rdp_up NAME — the VM answers RDP: over the network from here, or for a
+# VM on the LAN, which this host cannot reach (macvtap), its port 3389
+# listens inside (guest agent).
+_vm_rdp_up() {
+  if [[ -n "$(cfg_get VM_LAN)" ]]; then
+    virsh -c qemu:///system qemu-agent-command "$1" '{"execute":"guest-ping"}' >/dev/null 2>&1 \
+      && ( vm_exec "$1" "ss -ltnH '( sport = :3389 )' | grep -q ." ) >/dev/null 2>&1
+  else
+    timeout 2 bash -c ">/dev/tcp/$(vm_ip "$1")/3389" 2>/dev/null
+  fi
 }
 
 # _vulkan_icd RENDER_NODE — Vulkan ICD manifest of the GPU behind the node.
@@ -269,6 +305,7 @@ vm_create() {
   VM_LOCALE="$(cfg_req VM_LOCALE)" VM_TIMEZONE="$(cfg_req VM_TIMEZONE)"
   VM_KEYBOARD="$(cfg_req VM_KEYBOARD)" VM_KEYBOARD_VARIANT="$(cfg_get VM_KEYBOARD_VARIANT)"
   VM_DESKTOP_PACKAGE="$(cfg_req VM_DESKTOP_PACKAGE)" VM_SSH_KEY="$(_admin_pubkey)" VM_SWAP_SIZE="$swap"
+  VM_NET_V4="$(_vm_net_v4 "$name")"
   render user-data.yaml >"$work/user-data"
   render meta-data.yaml >"$work/meta-data"
   render network-config.yaml >"$work/network-config"
@@ -294,7 +331,7 @@ vm_create() {
   _vm_start "$name"
   log_info "Waiting for $name to answer RDP on $(vm_ip "$name"):3389"
   waited=0
-  until timeout 2 bash -c ">/dev/tcp/$(vm_ip "$name")/3389" 2>/dev/null; do
+  until _vm_rdp_up "$name"; do
     if (( waited >= 600 )); then die "$name does not answer RDP — check its console in Cockpit"; fi
     sleep 5; waited=$((waited + 5))
   done
@@ -390,7 +427,7 @@ _vm_shutdown() {
 }
 _vm_wait_rdp() {
   local name="$1" waited=0
-  until timeout 2 bash -c ">/dev/tcp/$(vm_ip "$name")/3389" 2>/dev/null; do
+  until _vm_rdp_up "$name"; do
     if (( waited >= 300 )); then die "$name does not answer RDP"; fi
     sleep 3; waited=$((waited + 3))
   done

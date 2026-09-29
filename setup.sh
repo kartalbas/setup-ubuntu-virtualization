@@ -28,6 +28,8 @@ ${C_BOLD}COMMANDS${C_RST} (install runs the host steps in this order)
                        Show the config, or change one value
   install              host, storage, stack build+activate, libvirt, cockpit,
                        proxy, gateway, firewall — idempotent, safe to re-run
+                       (proxy and gateway only on the entry point; see
+                       ENTRY_HOST, and FIREWALL for the firewall)
   host                 The host's name (HOST_NAME) and its /etc/hosts line
   storage              Prepare \$DATA_DIR and move libvirt's state onto it
   stack build [--force] | activate [ID] | rollback | status

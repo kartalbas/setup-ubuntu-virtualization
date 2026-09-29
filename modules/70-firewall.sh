@@ -9,6 +9,9 @@ _ufw_rule() { # RULE... — ufw skips rules it already has; hide that chatter
 }
 
 firewall_setup() {
+  if [[ "$(cfg_get FIREWALL 1)" == 0 ]]; then
+    log_info "Firewall: left as it is on this host (FIREWALL=0)"; return 0
+  fi
   log_step "Firewall (ufw)"
   apt_install ufw
   local bridge cidr port nat
@@ -22,10 +25,12 @@ firewall_setup() {
       _ufw_rule allow from "$cidr" to any port "$port" proto tcp comment 'LAN-only service'
     done
   done
-  _ufw_rule allow in on "$bridge" to any port 67 proto udp comment 'VM network: DHCP'
-  _ufw_rule allow in on "$bridge" to any port 53 comment 'VM network: DNS'
-  _ufw_rule route allow in on "$bridge" comment 'VM network: outbound (NAT)'
-  _ufw_rule route allow out on "$bridge" comment 'VM network: replies'
+  if [[ -z "$(cfg_get VM_LAN)" ]]; then   # VMs on the LAN are not behind this host
+    _ufw_rule allow in on "$bridge" to any port 67 proto udp comment 'VM network: DHCP'
+    _ufw_rule allow in on "$bridge" to any port 53 comment 'VM network: DNS'
+    _ufw_rule route allow in on "$bridge" comment 'VM network: outbound (NAT)'
+    _ufw_rule route allow out on "$bridge" comment 'VM network: replies'
+  fi
   [[ "$(ufw status)" == "Status: active"* ]] || run ufw --force enable
   ufw status verbose | sed 's/^/    /' >&2
 }

@@ -3,4 +3,4 @@ ethernets:
   lan:
     match:
       macaddress: "@VM_MAC@"
-    dhcp4: true
+@VM_NET_V4@

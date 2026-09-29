@@ -57,11 +57,7 @@
     </disk>
 @VM_SEED_XML@
     <controller type='usb' model='qemu-xhci'/>
-    <interface type='network'>
-      <source network='@NAT_NAME@'/>
-      <mac address='@VM_MAC@'/>
-      <model type='virtio'/>
-    </interface>
+@VM_NIC_XML@
     <channel type='unix'>
       <target type='virtio' name='org.qemu.guest_agent.0'/>
     </channel>
