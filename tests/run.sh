@@ -79,6 +79,11 @@ else
   echo "  - skipped: no python3-yaml here"
 fi
 
+echo "storage"
+mkdir -p "$tmp/disk"
+eq "a DATA_DIR not made yet is checked on its nearest existing parent" "$(existing_parent "$tmp/disk/virt/stack")" "$tmp/disk"
+eq "an existing path is itself" "$(existing_parent "$tmp/disk")" "$tmp/disk"
+
 echo "two hosts: VMs on the LAN, entry point elsewhere"
 CFG[VM_LAN]=eth9 CFG[VM_LAN_ADDRESSES]="192.168.1.201 192.168.1.202"
 eq "VM_LAN: vm_ip is the VM's LAN address" "$(vm_ip beta)" "192.168.1.202"

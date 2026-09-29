@@ -11,11 +11,20 @@
 
 LIBVIRT_STATE_MOUNT_UNIT="var-lib-libvirt.mount"
 
+# existing_parent PATH — PATH, or its nearest ancestor that exists (findmnt
+# finds nothing for a path that is not there yet, e.g. DATA_DIR on a new host).
+existing_parent() {
+  local p="$1"
+  while [[ ! -e "$p" && "$p" != / ]]; do p="$(dirname "$p")"; done
+  printf '%s' "$p"
+}
+
 storage_setup() {
   log_step "Storage under $DATA_DIR"
-  local mnt; mnt="$(findmnt -n -o TARGET -T "$DATA_DIR" 2>/dev/null || true)"
+  local at mnt; at="$(existing_parent "$DATA_DIR")"
+  mnt="$(findmnt -n -o TARGET -T "$at" 2>/dev/null || true)"
   [[ -n "$mnt" && "$mnt" != / ]] || die "$DATA_DIR is not on a mounted data disk (it resolves to '/') — mount the disk first"
-  log_ok "$DATA_DIR is on $(findmnt -n -o SOURCE -T "$DATA_DIR") ($mnt, $(df -h --output=avail "$mnt" | tail -1 | tr -d ' ') free)"
+  log_ok "$DATA_DIR is on $(findmnt -n -o SOURCE -T "$at") ($mnt, $(df -h --output=avail "$mnt" | tail -1 | tr -d ' ') free)"
 
   run install -d -m 0755 "$DATA_DIR" "$DATA_DIR/stack" "$DATA_DIR/images" "$DATA_DIR/libvirt"
   run install -d -m 0755 -o "$INVOKING_USER" "$DATA_DIR/src" "$DATA_DIR/build"
