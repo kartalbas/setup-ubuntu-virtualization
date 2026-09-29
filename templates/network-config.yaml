@@ -1,4 +1,10 @@
+# Managed by setup-ubuntu-virtualization. networkd, named here: the cloud
+# image's initramfs (dracut) leaves /run/systemd/network/zzzz-dracut-default.network
+# behind (DHCP on every link), and with the desktop's default renderer
+# (NetworkManager) networkd would keep the link on that file; netplan's own
+# 10-netplan-lan.network comes first.
 version: 2
+renderer: networkd
 ethernets:
   lan:
     match:

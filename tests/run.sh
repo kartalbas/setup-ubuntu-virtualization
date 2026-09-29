@@ -95,8 +95,8 @@ vm_lan_net() { printf '24 192.168.1.1 192.168.1.53'; }
 if python3 -c 'import yaml' 2>/dev/null; then
   VM_MAC=52:54:00:aa:bb:cc VM_NET_V4="$(_vm_net_v4 alpha)"
   eq "VM_LAN: cloud-init gives the VM its fixed address, gateway and DNS" \
-    "$(render network-config.yaml | python3 -c 'import sys, yaml; e = yaml.safe_load(sys.stdin)["ethernets"]["lan"]; print(e["addresses"], e["routes"][0]["via"], e["nameservers"]["addresses"], "dhcp4" in e)')" \
-    "['192.168.1.201/24'] 192.168.1.1 ['192.168.1.53'] False"
+    "$(render network-config.yaml | python3 -c 'import sys, yaml; n = yaml.safe_load(sys.stdin); e = n["ethernets"]["lan"]; print(n["renderer"], e["addresses"], e["routes"][0]["via"], e["nameservers"]["addresses"], "dhcp4" in e)')" \
+    "networkd ['192.168.1.201/24'] 192.168.1.1 ['192.168.1.53'] False"
 fi
 CFG[VM_LAN]="" CFG[VM_LAN_ADDRESSES]=""
 [[ "$(_vm_nic_xml 52:54:00:aa:bb:cc)" == *"<source network='$(cfg_get NAT_NAME)'/>"* ]] && ok "no VM_LAN: the NIC is on the NAT network" || bad "NAT NIC"

@@ -266,7 +266,7 @@ _vm_state() {
 # snapshot the overlay on top of it (NAME.TAG.qcow2; after a revert libvirt
 # names the new one NAME.<time>).
 vm_disk() {
-  local src; src="$(virsh -q -c qemu:///system domblklist "$1" 2>/dev/null | awk '$1 == "vda" {print $2}')"
+  local src; src="$(virsh -q -c qemu:///system domblklist "$1" 2>/dev/null | awk '$1 == "vda" {print $2}' || true)"   # none yet: a new VM
   printf '%s' "${src:-$DATA_DIR/vms/$1.qcow2}"
 }
 _vm_define() { # NAME [SEED]
