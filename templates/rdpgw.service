@@ -14,9 +14,9 @@ LoadCredential=rdpgw.yaml:@GATEWAY_CONF_DIR@/rdpgw.yaml
 WorkingDirectory=/tmp
 ExecStart=@STACK_CURRENT@/bin/rdpgw -c ${CREDENTIALS_DIRECTORY}/rdpgw.yaml
 # rdpgw listens on all interfaces; only Caddy (localhost) may talk to it, and
-# it may only reach the VM network.
+# it may only reach the VMs it lets through (this host's and REMOTE_VMS).
 IPAddressDeny=any
-IPAddressAllow=localhost @NAT_PREFIX@.0/24
+IPAddressAllow=@GATEWAY_ALLOW@
 Restart=on-failure
 NoNewPrivileges=yes
 ProtectSystem=strict

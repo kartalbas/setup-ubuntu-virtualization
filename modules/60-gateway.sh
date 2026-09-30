@@ -66,13 +66,15 @@ gateway_setup() {
   [[ -x "$(stack_current)/bin/rdpgw" ]] || die "No rdpgw in the active stack — run: sudo ./setup.sh stack build && sudo ./setup.sh stack activate"
   _gateway_hosts_file
   local vm ip hosts="" pw; pw="$(vm_password)"
+  GATEWAY_ALLOW="localhost"   # rdpgw may reach exactly the VMs it lets through
   while read -r vm ip; do
     hosts+="    - \"$vm:3389\""$'\n'"    - \"$ip:3389\""$'\n'
+    GATEWAY_ALLOW+=" $ip"
   done < <(gateway_vms)
   GATEWAY_HOST="$(cfg_req GATEWAY_HOST)" GATEWAY_HOSTS="${hosts%$'\n'}"
   SESSION_KEY="$(_gateway_key session)" SESSION_ENC_KEY="$(_gateway_key session-enc)"
   PAA_SIGN_KEY="$(_gateway_key paa-sign)" PAA_ENC_KEY="$(_gateway_key paa-enc)"
-  VM_USER="$(cfg_req VM_USER)" VM_PASSWORD="$pw" STACK_CURRENT="$(stack_current)" NAT_PREFIX="$(cfg_req NAT_PREFIX)"
+  VM_USER="$(cfg_req VM_USER)" VM_PASSWORD="$pw" STACK_CURRENT="$(stack_current)"
   run install -d -m 0700 "$GATEWAY_CONF_DIR"
   local changed=0
   render rdpgw.yaml | atomic_write "$GATEWAY_CONF_DIR/rdpgw.yaml" 0600; (( CHANGED )) && changed=1
@@ -82,7 +84,11 @@ gateway_setup() {
   if (( changed == 2 )); then run systemctl daemon-reload; fi
   run systemctl enable --now rdpgw-auth.service rdpgw.service
   if (( changed )); then run systemctl restart rdpgw-auth.service rdpgw.service; fi
-  local code; code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$GATEWAY_PORT/" || true)"
-  [[ "$code" != 000 ]] || [[ "$DRY_RUN" == 1 ]] || die "rdpgw does not answer on 127.0.0.1:$GATEWAY_PORT"
+  # Right after a restart rdpgw needs a moment to open its port.
+  local code waited=0
+  while code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$GATEWAY_PORT/" || true)"; [[ "$code" == 000 && "$DRY_RUN" != 1 ]]; do
+    (( waited < 15 )) || die "rdpgw does not answer on 127.0.0.1:$GATEWAY_PORT"
+    sleep 1; waited=$((waited + 1))
+  done
   log_ok "rdpgw answers (HTTP $code); RDP: gateway $(cfg_req GATEWAY_HOST), computer = VM name, user $(cfg_req VM_USER)"
 }

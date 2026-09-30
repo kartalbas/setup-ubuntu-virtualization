@@ -104,6 +104,10 @@ eq "no VM_LAN: DHCP (the reservation)" "$(_vm_net_v4 alpha)" "    dhcp4: true"
 CFG[REMOTE_VMS]="desk3=192.168.1.201"
 eq "the gateway lets this host's and other hosts' VMs through" "$(gateway_vms | tr '\n' ',')" "alpha 10.77.0.11,beta 10.77.0.12,desk3 192.168.1.201,"
 CFG[REMOTE_VMS]="desk3"; ( gateway_vms ) >/dev/null 2>&1 && bad "REMOTE_VMS without address accepted" || ok "REMOTE_VMS entries need NAME=ADDRESS"
+CFG[REMOTE_VMS]="desk3=192.168.1.201"
+( STACK_CURRENT=/s DATA_DIR=/d GATEWAY_ALLOW="localhost 10.77.0.11 10.77.0.12 192.168.1.201"
+  render rdpgw.service | grep -qx 'IPAddressAllow=localhost 10.77.0.11 10.77.0.12 192.168.1.201' ) \
+  && ok "rdpgw may reach its VMs, other hosts' too (systemd IPAddressAllow)" || bad "rdpgw.service IPAddressAllow"
 CFG[REMOTE_VMS]=""
 eq "entry point: Cockpit on localhost only" "$(_cockpit_listen | grep -c '^ListenStream=127.0.0.1:9090$')" "1"
 CFG[ENTRY_HOST]=192.168.1.250
