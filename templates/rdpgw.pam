@@ -1,0 +1,6 @@
+# Managed by setup-ubuntu-virtualization. The RD gateway's Basic logins (the
+# Windows App on macOS, iOS, Android): VM_USER and the gateway password, checked
+# against a hash only rdpgw-auth receives (a systemd credential), never against
+# this host's own accounts.
+auth     required  pam_pwdfile.so pwdfile=/run/credentials/rdpgw-auth.service/rdpgw-basic.passwd
+account  required  pam_permit.so

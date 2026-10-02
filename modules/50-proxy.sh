@@ -5,6 +5,9 @@
 # TLS-ALPN-01 on 443 itself, so port 80 is neither needed nor opened.
 
 GATEWAY_PORT=3443     # rdpgw, reachable from Caddy on localhost only
+# rdpgw's own certificate for 127.0.0.1 (modules/60-gateway.sh); Caddy, which
+# reads it, trusts exactly this one for the hop to rdpgw.
+GATEWAY_TLS_CRT="/etc/setup-ubuntu-virtualization/rdpgw-tls.crt"
 
 _caddy_install() {
   local key=/etc/apt/keyrings/caddy-stable.gpg tmp fprs
@@ -41,6 +44,14 @@ _site() {
   printf '%s {\n\timport acme_tls_alpn\n\treverse_proxy %s {\n\t\tflush_interval -1\n\t\tstream_close_delay 24h\n\t}\n}\n\n' "$1" "$2"
 }
 
+# _gateway_site HOST — the gateway's site: on to rdpgw over TLS (rdpgw needs
+# TLS of its own for Basic logins), trusting rdpgw's certificate alone, over
+# HTTP/1.1 as before.
+_gateway_site() {
+  printf '%s {\n\timport acme_tls_alpn\n\treverse_proxy https://127.0.0.1:%s {\n\t\ttransport http {\n\t\t\ttls_trust_pool file %s\n\t\t\tversions 1.1\n\t\t}\n\t\tflush_interval -1\n\t\tstream_close_delay 24h\n\t}\n}\n\n' \
+    "$1" "$GATEWAY_PORT" "$GATEWAY_TLS_CRT"
+}
+
 proxy_setup() {
   if [[ -n "$(cfg_get ENTRY_HOST)" ]]; then
     log_info "Caddy: not on this host — $(cfg_get ENTRY_HOST) is the entry point (ENTRY_HOST)"; return 0
@@ -52,7 +63,7 @@ proxy_setup() {
   ACME_EMAIL_LINE="# no ACME contact address (ACME_EMAIL) configured"
   [[ -n "$email" ]] && ACME_EMAIL_LINE="email $email"
   sites+="$(_site "$(cfg_req COCKPIT_HOST)" 127.0.0.1:9090)"$'\n\n'
-  sites+="$(_site "$(cfg_req GATEWAY_HOST)" "127.0.0.1:$GATEWAY_PORT")"$'\n\n'
+  sites+="$(_gateway_site "$(cfg_req GATEWAY_HOST)")"$'\n\n'
   for pair in $(cfg_get PROXY_SITES); do
     [[ "$pair" == *=* ]] || die "PROXY_SITES entry '$pair' is not HOST=UPSTREAM"
     sites+="$(_site "${pair%%=*}" "${pair#*=}")"$'\n\n'

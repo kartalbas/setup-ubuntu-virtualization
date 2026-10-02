@@ -1,9 +1,11 @@
 # shellcheck shell=bash
 # modules/60-gateway.sh — rdpgw, an RD Gateway: RDP clients (mstsc, Windows
 # App, Remmina/FreeRDP) tunnel native RDP through HTTPS on 443 to the VMs.
-# Users authenticate at the gateway with NTLM (VM_USER + its password); the
-# gateway then lets them reach exactly the VMs in VMS and REMOTE_VMS (those of
-# other hosts), by name, on 3389.
+# Users authenticate at the gateway as VM_USER with its password: mstsc with
+# NTLM, the Windows App on macOS, iOS and Android with Basic, which rdpgw-auth
+# checks through PAM against a hash of that password (never against the host's
+# accounts). The gateway then lets them reach exactly the VMs in VMS and
+# REMOTE_VMS (those of other hosts), by name, on 3389.
 
 GATEWAY_CONF_DIR="/etc/setup-ubuntu-virtualization/rdpgw"
 HOSTS_BEGIN="# BEGIN setup-ubuntu-virtualization VMs"
@@ -18,6 +20,19 @@ _gateway_key() {
     (umask 077; printf '%s' "${k:0:32}" >"$f")
   fi
   cat "$f"
+}
+
+# _gateway_basic_line USER PASSWORD [LINE] — the pam_pwdfile line for USER:
+# LINE again when its hash still matches PASSWORD (a new salt would rewrite the
+# file and restart the gateway on every run), else a new SHA-512 crypt hash.
+_gateway_basic_line() {
+  local user="$1" pw="$2" old="${3:-}" hash salt
+  hash="${old#"$user":}"
+  if [[ "$old" == "$user:\$6\$"* ]]; then
+    salt="${hash#\$6\$}"; salt="${salt%%\$*}"
+    [[ "$(openssl passwd -6 -salt "$salt" -stdin <<<"$pw")" == "$hash" ]] && { printf '%s\n' "$old"; return 0; }
+  fi
+  printf '%s:%s\n' "$user" "$(openssl passwd -6 -stdin <<<"$pw")"
 }
 
 # gateway_vms — "NAME ADDRESS" of every VM the gateway lets through: this
@@ -62,6 +77,19 @@ gateway_password() {
   gateway_setup
 }
 
+# _gateway_tls — rdpgw's own certificate for 127.0.0.1, made once: the key
+# stays root-only (rdpgw gets it as a credential), the certificate is readable
+# for Caddy, which trusts exactly it.
+_gateway_tls() {
+  local key="$GATEWAY_CONF_DIR/rdpgw-tls.key"
+  [[ -s "$key" && -s "$GATEWAY_TLS_CRT" ]] && return 0
+  [[ "$DRY_RUN" == 1 ]] && { log_info "dry-run: would make rdpgw's certificate for 127.0.0.1"; return 0; }
+  (umask 077; openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 3650 -quiet \
+    -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1" -keyout "$key" -out "$GATEWAY_TLS_CRT")
+  chmod 0644 "$GATEWAY_TLS_CRT"
+  log_ok "rdpgw's certificate for 127.0.0.1 ($GATEWAY_TLS_CRT)"
+}
+
 gateway_setup() {
   if [[ -n "$(cfg_get ENTRY_HOST)" ]]; then
     log_info "RD Gateway: not on this host — $(cfg_get ENTRY_HOST) is the entry point (its REMOTE_VMS lists this host's VMs)"; return 0
@@ -81,10 +109,15 @@ gateway_setup() {
   SESSION_KEY="$(_gateway_key session)" SESSION_ENC_KEY="$(_gateway_key session-enc)"
   PAA_SIGN_KEY="$(_gateway_key paa-sign)" PAA_ENC_KEY="$(_gateway_key paa-enc)"
   VM_USER="$(cfg_req VM_USER)" VM_PASSWORD="$pw" STACK_CURRENT="$(stack_current)"
+  apt_install libpam-pwdfile
   run install -d -m 0700 "$GATEWAY_CONF_DIR"
+  _gateway_tls
   local changed=0
   render rdpgw.yaml | atomic_write "$GATEWAY_CONF_DIR/rdpgw.yaml" 0600; (( CHANGED )) && changed=1
   render rdpgw-auth.yaml | atomic_write "$GATEWAY_CONF_DIR/rdpgw-auth.yaml" 0600; (( CHANGED )) && changed=1
+  _gateway_basic_line "$VM_USER" "$pw" "$(head -1 "$GATEWAY_CONF_DIR/rdpgw-basic.passwd" 2>/dev/null || true)" \
+    | atomic_write "$GATEWAY_CONF_DIR/rdpgw-basic.passwd" 0600; (( CHANGED )) && changed=1
+  render rdpgw.pam | atomic_write /etc/pam.d/rdpgw 0644; (( CHANGED )) && changed=1
   render rdpgw-auth.service | atomic_write /etc/systemd/system/rdpgw-auth.service 0644; (( CHANGED )) && changed=2
   render rdpgw.service | atomic_write /etc/systemd/system/rdpgw.service 0644; (( CHANGED )) && changed=2
   if (( changed == 2 )); then run systemctl daemon-reload; fi
@@ -92,7 +125,7 @@ gateway_setup() {
   if (( changed )); then run systemctl restart rdpgw-auth.service rdpgw.service; fi
   # Right after a restart rdpgw needs a moment to open its port.
   local code waited=0
-  while code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$GATEWAY_PORT/" || true)"; [[ "$code" == 000 && "$DRY_RUN" != 1 ]]; do
+  while code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$GATEWAY_TLS_CRT" "https://127.0.0.1:$GATEWAY_PORT/" || true)"; [[ "$code" == 000 && "$DRY_RUN" != 1 ]]; do
     (( waited < 15 )) || die "rdpgw does not answer on 127.0.0.1:$GATEWAY_PORT"
     sleep 1; waited=$((waited + 1))
   done

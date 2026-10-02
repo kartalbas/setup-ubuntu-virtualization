@@ -56,6 +56,13 @@ macOS/iOS/Android, Remmina/FreeRDP):
 | Gateway  | `GATEWAY_HOST`, "use my gateway credentials for the remote computer" |
 | User     | `VM_USER` and its password                      |
 
+The gateway takes both ways clients sign in: `mstsc` uses NTLM, the Windows
+App on macOS, iOS and Android HTTP Basic (it has no NTLM). Basic is checked by
+rdpgw-auth through PAM (`pam_pwdfile`) against a hash of the same password,
+never against the host's own accounts. rdpgw allows Basic only with TLS of its
+own, so Caddy reaches it over TLS too, trusting exactly rdpgw's certificate for
+127.0.0.1.
+
 You land on the VM's GNOME login screen; log in with the same user.
 FreeRDP 3: `xfreerdp3 /v:desk1 /u:vmadmin /gateway:g:rdp.example.com,u:vmadmin,type:auto`.
 

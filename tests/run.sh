@@ -119,6 +119,28 @@ CFG[REMOTE_VMS]="desk3=192.168.1.201"
   render rdpgw.service | grep -qx 'IPAddressAllow=localhost 10.77.0.11 10.77.0.12 192.168.1.201' ) \
   && ok "rdpgw may reach its VMs, other hosts' too (systemd IPAddressAllow)" || bad "rdpgw.service IPAddressAllow"
 CFG[REMOTE_VMS]=""
+( STACK_CURRENT=/s GATEWAY_HOST=g GATEWAY_HOSTS="" SESSION_KEY=k SESSION_ENC_KEY=k PAA_SIGN_KEY=k PAA_ENC_KEY=k
+  render rdpgw.yaml | grep -A3 '^  Authentication:' | grep -qx '    - local' ) \
+  && ok "the gateway offers Basic beside NTLM (Windows App on macOS/iOS/Android)" || bad "rdpgw.yaml: no local authentication"
+( STACK_CURRENT=/s DATA_DIR=/d GATEWAY_CONF_DIR=/c; render rdpgw-auth.service | grep -qx 'LoadCredential=rdpgw-basic.passwd:/c/rdpgw-basic.passwd' ) \
+  && grep -q 'pwdfile=/run/credentials/rdpgw-auth.service/rdpgw-basic.passwd' templates/rdpgw.pam \
+  && ok "PAM reads the hash from the credential rdpgw-auth receives" || bad "rdpgw-auth credential and PAM pwdfile differ"
+( STACK_CURRENT=/s GATEWAY_HOST=g GATEWAY_HOSTS="" SESSION_KEY=k SESSION_ENC_KEY=k PAA_SIGN_KEY=k PAA_ENC_KEY=k
+  render rdpgw.yaml | grep -qx '  CertFile: /run/credentials/rdpgw.service/rdpgw-tls.crt' ) \
+  && ( STACK_CURRENT=/s DATA_DIR=/d GATEWAY_CONF_DIR=/c GATEWAY_ALLOW=localhost; render rdpgw.service | grep -qx 'LoadCredential=rdpgw-tls.key:/c/rdpgw-tls.key' ) \
+  && ok "rdpgw speaks TLS with its own certificate (Basic needs it)" || bad "rdpgw TLS: CertFile or credential missing"
+gw="$(_gateway_site rdp.example.com)"
+[[ "$gw" == *"reverse_proxy https://127.0.0.1:$GATEWAY_PORT"* && "$gw" == *"tls_trust_pool file $GATEWAY_TLS_CRT"* && "$gw" == *"versions 1.1"* ]] \
+  && ok "Caddy reaches rdpgw over TLS, trusting rdpgw's certificate alone" || bad "gateway site: $gw"
+if command -v caddy >/dev/null; then
+  ( ACME_EMAIL_LINE="#" PROXY_SITE_BLOCKS="$gw"; render Caddyfile ) | caddy adapt --adapter caddyfile --config /dev/stdin >/dev/null 2>&1 \
+    && ok "Caddy accepts the gateway site" || bad "caddy adapt refuses the gateway site"
+fi
+l1="$(_gateway_basic_line vmadmin 'pass word 1')"
+# shellcheck disable=SC2016  # a literal $6$, the crypt prefix
+[[ "$l1" == 'vmadmin:$6$'* ]] && ok "Basic: a SHA-512 crypt hash for VM_USER" || bad "Basic line: $l1"
+eq "Basic: the same password keeps its line (no restart on every run)" "$(_gateway_basic_line vmadmin 'pass word 1' "$l1")" "$l1"
+[[ "$(_gateway_basic_line vmadmin 'changed' "$l1")" != "$l1" ]] && ok "Basic: a new password gives a new line" || bad "Basic: new password kept the old hash"
 eq "entry point: Cockpit on localhost only" "$(_cockpit_listen | grep -c '^ListenStream=127.0.0.1:9090$')" "1"
 CFG[ENTRY_HOST]=192.168.1.250
 [[ "$(_cockpit_listen)" == *"ListenStream=0.0.0.0:9090"*"IPAddressDeny=any"*"IPAddressAllow=localhost 192.168.1.250"* ]] \

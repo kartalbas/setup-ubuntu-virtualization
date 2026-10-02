@@ -2,10 +2,17 @@
 Server:
   GatewayAddress: @GATEWAY_HOST@
   Port: @GATEWAY_PORT@
-  # TLS ends at Caddy; rdpgw only listens behind it.
-  Tls: disable
+  # TLS from Caddy to rdpgw as well, with rdpgw's own certificate for
+  # 127.0.0.1 (Caddy trusts exactly that one): rdpgw refuses Basic logins
+  # without TLS of its own. Only Caddy reaches it.
+  Tls: auto
+  CertFile: /run/credentials/rdpgw.service/rdpgw-tls.crt
+  KeyFile: /run/credentials/rdpgw.service/rdpgw-tls.key
+  # Each client picks what it speaks: mstsc NTLM, the Windows App on macOS,
+  # iOS and Android Basic ("local", checked by rdpgw-auth through PAM).
   Authentication:
     - ntlm
+    - local
   AuthSocket: /run/rdpgw/auth.sock
   # Clients name the target themselves; only these are allowed.
   HostSelection: unsigned

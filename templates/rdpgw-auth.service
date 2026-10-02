@@ -10,6 +10,7 @@ Group=rdpgw
 RuntimeDirectory=rdpgw
 RuntimeDirectoryMode=0750
 LoadCredential=rdpgw-auth.yaml:@GATEWAY_CONF_DIR@/rdpgw-auth.yaml
+LoadCredential=rdpgw-basic.passwd:@GATEWAY_CONF_DIR@/rdpgw-basic.passwd
 ExecStart=@STACK_CURRENT@/bin/rdpgw-auth -c ${CREDENTIALS_DIRECTORY}/rdpgw-auth.yaml -s /run/rdpgw/auth.sock
 Restart=on-failure
 NoNewPrivileges=yes

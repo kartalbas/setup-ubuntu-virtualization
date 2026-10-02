@@ -11,6 +11,8 @@ DynamicUser=yes
 User=rdpgw
 Group=rdpgw
 LoadCredential=rdpgw.yaml:@GATEWAY_CONF_DIR@/rdpgw.yaml
+LoadCredential=rdpgw-tls.crt:@GATEWAY_TLS_CRT@
+LoadCredential=rdpgw-tls.key:@GATEWAY_CONF_DIR@/rdpgw-tls.key
 WorkingDirectory=/tmp
 ExecStart=@STACK_CURRENT@/bin/rdpgw -c ${CREDENTIALS_DIRECTORY}/rdpgw.yaml
 # rdpgw listens on all interfaces; only Caddy (localhost) may talk to it, and
