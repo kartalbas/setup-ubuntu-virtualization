@@ -1,0 +1,10 @@
+# Managed by setup-ubuntu-virtualization: renew the VMs' RDP certificates and
+# give a renewed one to its VM.
+[Unit]
+Description=RDP certificates of the VMs: renew, deploy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@REPO_ROOT@/setup.sh certs renew

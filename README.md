@@ -62,6 +62,28 @@ FreeRDP 3: `xfreerdp3 /v:desk1 /u:vmadmin /gateway:g:rdp.example.com,u:vmadmin,t
 Browsing to `GATEWAY_HOST` shows "404 page not found": it is not a web page,
 only RDP clients talk to it.
 
+### Public certificates for the VMs (`RDP_CERT_DOMAIN`)
+
+An RDP client checks the certificate of the computer it connects to, also
+through the gateway. GNOME Remote Desktop's own is self-signed: clients warn,
+and Windows refuses saved passwords for such a computer. With
+`RDP_CERT_DOMAIN="host.example.com"` every VM presents a Let's Encrypt
+certificate for `VM.host.example.com`; enter that name as the computer. The
+gateway lets the VM through by both names.
+
+- The certificates come from lego (pinned in `tools.conf`) with the DNS-01
+  challenge at Cloudflare: nothing has to reach the host from outside, so a
+  host behind another host's entry point gets them too. Put an API token
+  allowed to edit the zone's DNS ("Edit zone DNS", that zone only) into
+  `secrets/cloudflare-dns.token` (one line, root only; `configs save` keeps it).
+- `sudo ./setup.sh certs` obtains them, gives each running VM its own through
+  the guest agent and installs a daily timer that renews and deploys them
+  (`certs renew`). GNOME Remote Desktop takes a new certificate at once,
+  without a restart; open sessions stay.
+- The name need not lead anywhere: the client reaches the VM through the
+  gateway, the name is only its identity. `doctor` checks that each VM
+  presents its certificate with 14 days left and that the timer is on.
+
 ## SSH into the VMs
 
 The admin account that runs `sudo ./setup.sh` gets key-based SSH into every VM
@@ -149,6 +171,7 @@ still checks that gateway and tunnel reach the VM, but not the login itself.
 | `libvirt` | wire the active stack into the system, NAT network (none with `VM_LAN`), storage pools |
 | `cockpit`, `proxy`, `gateway`, `firewall` | the individual services |
 | `gateway password` | change the gateway password (see Passwords) |
+| `certs [renew]` | Let's Encrypt certificates for the VMs' RDP and their daily renewal (`RDP_CERT_DOMAIN`, above); `renew` only renews and deploys |
 | `vm create NAME` / `update NAME` / `restart NAME` / `delete NAME --yes` / `list` / `exec NAME CMD` | desktop VMs; `update` applies config changes at the next boot and refreshes SSH access, `restart` reboots cleanly, `exec` runs a command inside (guest agent) |
 | `vm snapshot NAME [TAG]` / `snapshots NAME` / `revert NAME TAG --yes` / `snapshot-delete NAME TAG` | disk snapshots (below) |
 | `doctor [--rdp]` | check of everything, incl. DNS and certificates; `--rdp` performs real RDP logins, directly and through the gateway |
@@ -214,8 +237,9 @@ GitHub first for a private one); this host's files are in
 setup.sh            entry point (commands above)
 lib/common.sh       logging, config, templates, downloads
 modules/NN-*.sh     one step each: storage, stack, integrate, libvirt, cockpit,
-                    proxy, gateway, firewall, vm, doctor
+                    proxy, gateway, certs, firewall, vm, doctor
 templates/          every file the scripts write (units, profiles, cloud-init)
-versions.conf       pinned upstream sources
+versions.conf       pinned upstream sources of the stack
+tools.conf          pinned tools beside the stack (lego)
 config.example.conf documented machine config
 ```

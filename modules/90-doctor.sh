@@ -8,6 +8,13 @@ _check() { # DESCRIPTION COMMAND... — run a check, report ✓/✗
   else log_err "$what"; _d_bad=$((_d_bad + 1)); fi
 }
 _active()   { systemctl is-active -q "$1"; }
+# _vm_cert_ok VM — its RDP presents the certificate lego keeps for it, which
+# has at least 14 days left.
+_vm_cert_ok() {
+  local crt; crt="$(_certs_dir)/certificates/$(rdp_cert_name "$1").crt"
+  [[ -f "$crt" ]] && openssl x509 -in "$crt" -noout -checkend $((14 * 86400)) \
+    && [[ "$(_cert_fpr "$crt")" == "$(_vm_rdp_fpr "$1")" ]]
+}
 _http_ok()  { local c; c="$(curl -s -o /dev/null -m 5 -w '%{http_code}' "$@")"; [[ "$c" =~ ^(2|3|401|404) ]]; }
 _tcp_open() { timeout 3 bash -c ">/dev/tcp/$1/$2"; }
 _resolves_here() { # HOST — DNS points at this machine's public address
@@ -87,6 +94,8 @@ doctor() {
     _check "rdpgw is not reachable from the LAN" bash -c "! timeout 3 bash -c '>/dev/tcp/$(hostname -I | awk '{print $1}')/$GATEWAY_PORT'"
   fi
   [[ "$(cfg_get FIREWALL 1)" == 0 ]] || _check "ufw is active" bash -c "[[ \$(ufw status) == 'Status: active'* ]]"
+  [[ -z "$(cfg_get RDP_CERT_DOMAIN)" ]] || _check "the RDP certificates' daily renewal is on ($CERTS_UNIT.timer)" \
+    systemctl is-active -q "$CERTS_UNIT.timer"
   _check "no guest QEMU uses the NVIDIA GPU" _qemu_off_nvidia
   [[ -z "$(cfg_get VM_RENDER_NODE)" ]] || _check "render node $(cfg_get VM_RENDER_NODE) exists" test -e "$(cfg_get VM_RENDER_NODE)"
   for vm in $(cfg_req VMS); do
@@ -95,6 +104,8 @@ doctor() {
     _check "VM $vm: disk readable by root/QEMU only" \
       bash -c "[[ \$(stat -c %a '$(vm_disk "$vm")') == 600 ]]"
     _check "VM $vm answers RDP on $(vm_ip "$vm"):3389" _vm_rdp_up "$vm"
+    [[ -z "$(cfg_get RDP_CERT_DOMAIN)" ]] || _check "VM $vm presents the certificate for $(rdp_cert_name "$vm"), valid 14 more days" \
+      _vm_cert_ok "$vm"
     # A VM on the LAN (macvtap) cannot be reached from this host: the entry
     # point checks it (REMOTE_VMS there).
     [[ -n "$(cfg_get VM_LAN)" ]] && continue

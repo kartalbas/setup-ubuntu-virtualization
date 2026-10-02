@@ -1,0 +1,11 @@
+# Managed by setup-ubuntu-virtualization.
+[Unit]
+Description=RDP certificates of the VMs: daily renewal check
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

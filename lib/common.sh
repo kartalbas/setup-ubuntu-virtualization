@@ -106,8 +106,8 @@ cfg_req() { [[ -n "${CFG[$1]:-}" ]] || die "Config key $1 is empty in $CONFIG_FI
 
 # Pinned upstream versions and checksums (versions.conf, part of the repo).
 declare -gA VER=()
-ver_load() { _parse_kv_file "$REPO_ROOT/versions.conf" VER; }
-ver_get() { [[ -n "${VER[$1]:-}" ]] || die "versions.conf has no $1"; printf '%s' "${VER[$1]}"; }
+ver_load() { _parse_kv_file "$REPO_ROOT/versions.conf" VER; _parse_kv_file "$REPO_ROOT/tools.conf" VER; }
+ver_get() { [[ -n "${VER[$1]:-}" ]] || die "versions.conf / tools.conf have no $1"; printf '%s' "${VER[$1]}"; }
 
 # ---- files -----------------------------------------------------------------
 # atomic_write PATH [MODE] — write stdin to PATH via a temp file in the same

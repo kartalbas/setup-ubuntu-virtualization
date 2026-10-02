@@ -21,10 +21,14 @@ _gateway_key() {
 }
 
 # gateway_vms — "NAME ADDRESS" of every VM the gateway lets through: this
-# host's (VMS) and other hosts' (REMOTE_VMS).
+# host's (VMS), each also by the name of its certificate (RDP_CERT_DOMAIN),
+# and other hosts' (REMOTE_VMS).
 gateway_vms() {
-  local vm pair
-  for vm in $(cfg_req VMS); do printf '%s %s\n' "$vm" "$(vm_ip "$vm")"; done
+  local vm pair ip
+  for vm in $(cfg_req VMS); do
+    ip="$(vm_ip "$vm")"; printf '%s %s\n' "$vm" "$ip"
+    [[ -z "$(cfg_get RDP_CERT_DOMAIN)" ]] || printf '%s %s\n' "$(rdp_cert_name "$vm")" "$ip"
+  done
   for pair in $(cfg_get REMOTE_VMS); do
     [[ "$pair" == ?*=?* ]] || die "REMOTE_VMS entry '$pair' is not NAME=ADDRESS"
     printf '%s %s\n' "${pair%%=*}" "${pair#*=}"
@@ -68,7 +72,9 @@ gateway_setup() {
   local vm ip hosts="" pw; pw="$(vm_password)"
   GATEWAY_ALLOW="localhost"   # rdpgw may reach exactly the VMs it lets through
   while read -r vm ip; do
-    hosts+="    - \"$vm:3389\""$'\n'"    - \"$ip:3389\""$'\n'
+    hosts+="    - \"$vm:3389\""$'\n'
+    [[ " $GATEWAY_ALLOW " == *" $ip "* ]] && continue   # the same VM by its certificate's name
+    hosts+="    - \"$ip:3389\""$'\n'
     GATEWAY_ALLOW+=" $ip"
   done < <(gateway_vms)
   GATEWAY_HOST="$(cfg_req GATEWAY_HOST)" GATEWAY_HOSTS="${hosts%$'\n'}"

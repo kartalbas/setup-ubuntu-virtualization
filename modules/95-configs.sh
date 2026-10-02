@@ -10,6 +10,7 @@
 CONFIGS_FILES=(
   "config.conf|$CONFIG_FILE"
   "secrets/vm-user.password|$SECRETS_DIR/vm-user.password"
+  "secrets/cloudflare-dns.token|$SECRETS_DIR/cloudflare-dns.token"
 )
 
 configs_run() { # [save]

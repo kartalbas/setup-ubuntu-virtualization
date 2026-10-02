@@ -39,8 +39,12 @@ while read -r k; do
   p="${k%_VERSION}"
   [[ -n "$(ver_get "${p}_URL")" && "$(ver_get "${p}_SHA256")" =~ ^[0-9a-f]{64}$ ]] \
     && ok "$p has URL + SHA-256" || bad "$p lacks URL or SHA-256"
-done < <(grep -oE '^[A-Z_]+_VERSION' versions.conf)
+done < <(grep -hoE '^[A-Z_]+_VERSION' versions.conf tools.conf)
 eq "stack id is stable" "$(stack_id)" "$(stack_id)"
+before="$(stack_id)"; VER[LEGO_VERSION]="0.0.0"
+grep -q '^LEGO_' versions.conf && bad "lego is pinned in versions.conf (it would change the stack id)" || ok "lego is pinned beside the stack (tools.conf), not in it"
+eq "the stack id ignores tools.conf" "$(stack_id)" "$before"
+
 
 echo "cpu sets"
 eq "_cpu_list_expand" "$(_cpu_list_expand "0-3,8,10-11")" "0 1 2 3 8 10 11"
@@ -101,6 +105,12 @@ fi
 CFG[VM_LAN]="" CFG[VM_LAN_ADDRESSES]=""
 [[ "$(_vm_nic_xml 52:54:00:aa:bb:cc)" == *"<source network='$(cfg_get NAT_NAME)'/>"* ]] && ok "no VM_LAN: the NIC is on the NAT network" || bad "NAT NIC"
 eq "no VM_LAN: DHCP (the reservation)" "$(_vm_net_v4 alpha)" "    dhcp4: true"
+CFG[RDP_CERT_DOMAIN]="host.example.com"
+eq "RDP certificate name: VM.RDP_CERT_DOMAIN" "$(rdp_cert_name alpha)" "alpha.host.example.com"
+eq "the gateway lets each VM through by its certificate's name too" "$(gateway_vms | tr '\n' ',')" \
+  "alpha 10.77.0.11,alpha.host.example.com 10.77.0.11,beta 10.77.0.12,beta.host.example.com 10.77.0.12,"
+CFG[RDP_CERT_DOMAIN]=""
+eq "no RDP_CERT_DOMAIN: no certificate name" "$(rdp_cert_name alpha)" ""
 CFG[REMOTE_VMS]="desk3=192.168.1.201"
 eq "the gateway lets this host's and other hosts' VMs through" "$(gateway_vms | tr '\n' ',')" "alpha 10.77.0.11,beta 10.77.0.12,desk3 192.168.1.201,"
 CFG[REMOTE_VMS]="desk3"; ( gateway_vms ) >/dev/null 2>&1 && bad "REMOTE_VMS without address accepted" || ok "REMOTE_VMS entries need NAME=ADDRESS"

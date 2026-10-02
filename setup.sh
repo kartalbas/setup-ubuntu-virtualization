@@ -41,6 +41,9 @@ ${C_BOLD}COMMANDS${C_RST} (install runs the host steps in this order)
   proxy                Caddy: the single TLS entry point on port 443
   gateway [password]   rdpgw: RDP over HTTPS (RD Gateway) to the VMs;
                        password sets the gateway password (asked twice)
+  certs [renew]        Let's Encrypt certificates for the VMs' RDP
+                       (RDP_CERT_DOMAIN) and their daily renewal timer;
+                       renew: only obtain/renew and deploy (what the timer runs)
   firewall             ufw: allow SSH and 443 only (plus LAN/VM-internal ports)
   vm create NAME | update NAME | restart NAME [--force] | delete NAME --yes | list |
      exec NAME COMMAND
@@ -85,7 +88,7 @@ main() {
   ver_load
   DATA_DIR="$(cfg_req DATA_DIR)"
   case "$verb" in
-    install)  host_setup; storage_setup; stack_build; stack_activate; cockpit_setup; proxy_setup; gateway_setup; firewall_setup ;;
+    install)  host_setup; storage_setup; stack_build; stack_activate; cockpit_setup; proxy_setup; gateway_setup; certs_setup; firewall_setup ;;
     host)     host_setup ;;
     storage)  storage_setup ;;
     stack)
@@ -104,6 +107,12 @@ main() {
         "")       gateway_setup ;;
         password) gateway_password ;;
         *) die "gateway: (no argument) | password" ;;
+      esac ;;
+    certs)
+      case "${1:-}" in
+        "")    certs_setup ;;
+        renew) certs_run ;;
+        *) die "certs: (no argument) | renew" ;;
       esac ;;
     firewall) firewall_setup ;;
     vm)
