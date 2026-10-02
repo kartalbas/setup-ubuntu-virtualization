@@ -117,13 +117,14 @@ doctor() {
     fi
   done
   if [[ -z "$entry" ]]; then   # the entry point: other hosts' VMs, names, certificates
-    for pair in $(cfg_get REMOTE_VMS); do
-      _check "remote VM ${pair%%=*} answers RDP on ${pair#*=}:3389" _tcp_open "${pair#*=}" 3389
+    local name addr port
+    while read -r name addr port; do
+      _check "remote target $name answers RDP on $addr:$port" _tcp_open "$addr" "$port"
       if (( rdp )); then
-        _check_rdp "${pair%%=*}"
-        _check_rdp "${pair%%=*}" "$(cfg_req GATEWAY_HOST)"
+        _check_rdp "$name:$port"
+        _check_rdp "$name:$port" "$(cfg_req GATEWAY_HOST)"
       fi
-    done
+    done < <(gateway_remote_targets)
     for h in $(proxy_hosts); do
       _check "DNS: $h points at this host's public address" _resolves_here "$h"
       _check "TLS: Caddy holds a certificate for $h" proxy_has_cert "$h"

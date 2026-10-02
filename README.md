@@ -130,6 +130,10 @@ gateway, with the VM name as computer. The gateway checks its password and the
 VM its own, so give both hosts the same VM password (the config repository keeps
 it per host in `secrets/vm-user.password`).
 
+`REMOTE_VMS` takes any RDP server the gateway should let through, also one on
+another port: `NAME=ADDRESS:PORT`, and the client enters `NAME:PORT` as the
+computer.
+
 Macvtap leaves the second host's network as it is, but that host itself cannot
 reach its LAN VMs over the network: `vm create`, `vm restart` and `doctor` check
 them through the guest agent, `vm exec` works as always, and SSH comes from other

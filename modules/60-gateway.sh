@@ -5,7 +5,8 @@
 # NTLM, the Windows App on macOS, iOS and Android with Basic, which rdpgw-auth
 # checks through PAM against a hash of that password (never against the host's
 # accounts). The gateway then lets them reach exactly the VMs in VMS and
-# REMOTE_VMS (those of other hosts), by name, on 3389.
+# REMOTE_VMS (those of other hosts), by name, on 3389 (or a REMOTE_VMS entry's
+# own port).
 
 GATEWAY_CONF_DIR="/etc/setup-ubuntu-virtualization/rdpgw"
 HOSTS_BEGIN="# BEGIN setup-ubuntu-virtualization VMs"
@@ -35,18 +36,25 @@ _gateway_basic_line() {
   printf '%s:%s\n' "$user" "$(openssl passwd -6 -stdin <<<"$pw")"
 }
 
-# gateway_vms — "NAME ADDRESS" of every VM the gateway lets through: this
-# host's (VMS), each also by the name of its certificate (RDP_CERT_DOMAIN),
-# and other hosts' (REMOTE_VMS).
+# gateway_vms — "NAME ADDRESS PORT" of every RDP target the gateway lets
+# through: this host's VMs (VMS), each also by the name of its certificate
+# (RDP_CERT_DOMAIN), and other targets (REMOTE_VMS, NAME=ADDRESS[:PORT]: a VM of
+# another host, or an RDP server with a port of its own).
 gateway_vms() {
-  local vm pair ip
+  local vm ip
   for vm in $(cfg_req VMS); do
-    ip="$(vm_ip "$vm")"; printf '%s %s\n' "$vm" "$ip"
-    [[ -z "$(cfg_get RDP_CERT_DOMAIN)" ]] || printf '%s %s\n' "$(rdp_cert_name "$vm")" "$ip"
+    ip="$(vm_ip "$vm")"; printf '%s %s 3389\n' "$vm" "$ip"
+    [[ -z "$(cfg_get RDP_CERT_DOMAIN)" ]] || printf '%s %s 3389\n' "$(rdp_cert_name "$vm")" "$ip"
   done
+  gateway_remote_targets
+}
+
+# gateway_remote_targets — "NAME ADDRESS PORT" of each REMOTE_VMS entry.
+gateway_remote_targets() {
+  local pair
   for pair in $(cfg_get REMOTE_VMS); do
-    [[ "$pair" == ?*=?* ]] || die "REMOTE_VMS entry '$pair' is not NAME=ADDRESS"
-    printf '%s %s\n' "${pair%%=*}" "${pair#*=}"
+    [[ "$pair" =~ ^([^=]+)=([^:=]+)(:([0-9]+))?$ ]] || die "REMOTE_VMS entry '$pair' is not NAME=ADDRESS[:PORT]"
+    printf '%s %s %s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[4]:-3389}"
   done
 }
 
@@ -54,7 +62,9 @@ gateway_vms() {
 _gateway_hosts_file() {
   local vm ip block
   block="$HOSTS_BEGIN"$'\n'
-  while read -r vm ip; do block+="$ip	$vm"$'\n'; done < <(gateway_vms)
+  while read -r vm ip _; do
+    [[ "$block" == *$'\n'"$ip	$vm"$'\n'* ]] || block+="$ip	$vm"$'\n'   # a target on several ports: one line
+  done < <(gateway_vms)
   block+="$HOSTS_END"
   awk -v b="$HOSTS_BEGIN" -v e="$HOSTS_END" '$0 == b {skip=1} !skip {print} $0 == e {skip=0}' /etc/hosts \
     | { cat; printf '%s\n' "$block"; } | atomic_write /etc/hosts 0644
@@ -99,11 +109,10 @@ gateway_setup() {
   _gateway_hosts_file
   local vm ip hosts="" pw; pw="$(vm_password)"
   GATEWAY_ALLOW="localhost"   # rdpgw may reach exactly the VMs it lets through
-  while read -r vm ip; do
-    hosts+="    - \"$vm:3389\""$'\n'
-    [[ " $GATEWAY_ALLOW " == *" $ip "* ]] && continue   # the same VM by its certificate's name
-    hosts+="    - \"$ip:3389\""$'\n'
-    GATEWAY_ALLOW+=" $ip"
+  while read -r vm ip port; do
+    hosts+="    - \"$vm:$port\""$'\n'
+    [[ "$hosts" == *"\"$ip:$port\""* ]] || hosts+="    - \"$ip:$port\""$'\n'   # the same target by its certificate's name
+    [[ " $GATEWAY_ALLOW " == *" $ip "* ]] || GATEWAY_ALLOW+=" $ip"
   done < <(gateway_vms)
   GATEWAY_HOST="$(cfg_req GATEWAY_HOST)" GATEWAY_HOSTS="${hosts%$'\n'}"
   SESSION_KEY="$(_gateway_key session)" SESSION_ENC_KEY="$(_gateway_key session-enc)"
